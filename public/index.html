@@ -1,0 +1,476 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Ceteris — Economics Tutor</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Lora:ital,wght@0,600;1,500&family=IBM+Plex+Sans:wght@400;600&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --paper: #EAE7DE; --paper-raised: #F3F1EA; --ink: #22303D; --ink-soft: #5B6B78;
+    --line: #C9C3B4; --teal: #3E7C7A; --teal-deep: #2C5957; --ochre: #B9873E;
+    --ochre-soft: #E4D3AF; --struggle: #A24B3E;
+    --font-display: 'Lora', Georgia, serif; --font-body: 'IBM Plex Sans', sans-serif; --font-mono: 'IBM Plex Mono', monospace;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; font-family: var(--font-body); color: var(--ink); background: var(--paper); }
+  h1, h2, h3 { font-family: var(--font-display); font-weight: 600; margin: 0; }
+
+  .landing { max-width: 760px; margin: 0 auto; padding: 64px 24px 40px; text-align: center; }
+  .landing .wordmark { font-family: var(--font-display); font-size: 44px; font-style: italic; }
+  .landing .tagline { font-family: var(--font-mono); font-size: 12px; text-transform: uppercase; letter-spacing: 2px; color: var(--ink-soft); margin-top: 6px; }
+  .role-buttons { display: flex; gap: 16px; justify-content: center; margin-top: 36px; flex-wrap: wrap; }
+  .role-btn { font-size: 15px; font-weight: 600; padding: 14px 26px; border-radius: 3px; border: 1.5px solid var(--ink); background: var(--paper-raised); color: var(--ink); cursor: pointer; }
+  .role-btn:hover { background: var(--teal); color: white; border-color: var(--teal); }
+  .role-btn.primary { background: var(--teal); color: white; border-color: var(--teal-deep); }
+  .role-btn.primary:hover { background: var(--teal-deep); }
+
+  .topbar { display: flex; align-items: center; justify-content: space-between; padding: 16px 28px; border-bottom: 1.5px solid var(--line); background: var(--paper-raised); }
+  .topbar .brand { font-family: var(--font-display); font-style: italic; font-size: 20px; }
+  .topbar .who { font-family: var(--font-mono); font-size: 12px; color: var(--ink-soft); }
+  .link-btn { background: none; border: none; font-family: var(--font-mono); font-size: 12px; color: var(--teal-deep); text-decoration: underline; cursor: pointer; }
+
+  .student-wrap { max-width: 900px; margin: 0 auto; padding: 0 20px; }
+  .id-gate { max-width: 420px; margin: 80px auto; text-align: center; }
+  .id-gate input { width: 100%; padding: 12px 14px; font-size: 15px; border: 1.5px solid var(--line); border-radius: 3px; margin: 18px 0; background: white; }
+  .chat-layout { display: grid; grid-template-columns: 1fr 260px; gap: 22px; margin-top: 22px; }
+  @media (max-width: 720px) { .chat-layout { grid-template-columns: 1fr; } }
+
+  .chat-panel { background: var(--paper-raised); border: 1.5px solid var(--line); border-radius: 4px; display: flex; flex-direction: column; height: 62vh; min-height: 420px; }
+  .chat-scroll { flex: 1; overflow-y: auto; padding: 20px; }
+  .msg { margin-bottom: 16px; max-width: 88%; }
+  .msg.user { margin-left: auto; text-align: right; }
+  .msg .bubble { display: inline-block; text-align: left; padding: 10px 14px; border-radius: 4px; font-size: 14.5px; line-height: 1.55; }
+  .msg.user .bubble { background: var(--teal); color: white; }
+  .msg.tutor .bubble { background: white; border: 1px solid var(--line); }
+  .msg .label { font-family: var(--font-mono); font-size: 10px; text-transform: uppercase; letter-spacing: 1px; color: var(--ink-soft); display: block; margin-bottom: 4px; }
+  .chat-input-row { display: flex; gap: 10px; padding: 14px; border-top: 1.5px solid var(--line); }
+  .chat-input-row textarea { flex: 1; resize: none; font-size: 14.5px; padding: 10px 12px; border: 1.5px solid var(--line); border-radius: 3px; height: 46px; font-family: var(--font-body); }
+  .send-btn { background: var(--ink); color: var(--paper); border: none; border-radius: 3px; padding: 0 20px; font-weight: 600; cursor: pointer; }
+  .send-btn:disabled { opacity: 0.5; cursor: default; }
+
+  .progress-card { background: var(--paper-raised); border: 1.5px solid var(--line); border-radius: 4px; padding: 18px; }
+  .progress-card h3 { font-size: 16px; margin-bottom: 10px; }
+  .mastery-pill { display: inline-block; font-family: var(--font-mono); font-size: 11px; padding: 3px 10px; border-radius: 20px; margin-bottom: 12px; }
+  .mastery-struggling { background: #F1DCD5; color: var(--struggle); }
+  .mastery-developing { background: var(--ochre-soft); color: #7A5A22; }
+  .mastery-solid { background: #D6E5D3; color: var(--teal-deep); }
+  .topic-tag { display: inline-block; font-size: 12px; background: var(--paper); border: 1px solid var(--line); padding: 3px 8px; border-radius: 3px; margin: 3px 3px 0 0; }
+  .miscon-item { font-size: 12.5px; color: var(--struggle); margin-top: 6px; padding-left: 12px; border-left: 2px solid var(--struggle); }
+
+  .dash-wrap { max-width: 1100px; margin: 0 auto; padding: 28px 20px 60px; }
+  .dash-controls { display: flex; align-items: center; gap: 14px; margin-bottom: 22px; flex-wrap: wrap; }
+  .dash-controls input[type=date] { font-family: var(--font-mono); padding: 8px 10px; border: 1.5px solid var(--line); border-radius: 3px; }
+  .dash-refresh { font-family: var(--font-mono); font-size: 12px; color: var(--ink-soft); }
+  .class-summary { background: var(--paper-raised); border: 1.5px solid var(--line); border-radius: 4px; padding: 20px; margin-bottom: 24px; }
+  .class-summary h2 { font-size: 18px; margin-bottom: 12px; }
+  .struggle-bar-row { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; }
+  .struggle-bar-label { width: 210px; font-size: 13px; flex-shrink: 0; }
+  .struggle-bar-track { flex: 1; background: var(--paper); border-radius: 3px; height: 10px; overflow: hidden; }
+  .struggle-bar-fill { height: 100%; background: var(--struggle); }
+  .struggle-bar-count { font-family: var(--font-mono); font-size: 11px; color: var(--ink-soft); width: 26px; text-align: right; }
+  .student-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 16px; }
+  .student-card { background: var(--paper-raised); border: 1.5px solid var(--line); border-radius: 4px; padding: 16px; }
+  .student-card .sname { font-family: var(--font-display); font-size: 16px; margin-bottom: 4px; }
+  .empty-state { text-align: center; padding: 60px 20px; color: var(--ink-soft); font-family: var(--font-mono); font-size: 13px; }
+
+  .login-gate { max-width: 380px; margin: 90px auto; text-align: center; }
+  .login-gate input { width: 100%; padding: 12px 14px; font-size: 15px; border: 1.5px solid var(--line); border-radius: 3px; margin: 18px 0; background: white; }
+  .login-error { color: var(--struggle); font-size: 13px; margin-top: -8px; margin-bottom: 12px; }
+
+  .dash-tabs { display: flex; gap: 8px; margin-bottom: 20px; }
+  .dash-tab { font-family: var(--font-mono); font-size: 12px; text-transform: uppercase; letter-spacing: 0.5px; padding: 8px 16px; border: 1.5px solid var(--line); background: var(--paper-raised); border-radius: 3px; cursor: pointer; color: var(--ink-soft); }
+  .dash-tab.active { background: var(--ink); color: var(--paper); border-color: var(--ink); }
+
+  .usage-table { width: 100%; border-collapse: collapse; background: var(--paper-raised); border: 1.5px solid var(--line); border-radius: 4px; overflow: hidden; }
+  .usage-table th, .usage-table td { text-align: left; padding: 10px 14px; font-size: 13px; border-bottom: 1px solid var(--line); }
+  .usage-table th { font-family: var(--font-mono); font-size: 11px; text-transform: uppercase; color: var(--ink-soft); background: var(--paper); }
+  .usage-table tr:last-child td { border-bottom: none; }
+
+  .history-btn { font-family: var(--font-mono); font-size: 11px; color: var(--teal-deep); background: none; border: none; text-decoration: underline; cursor: pointer; padding: 0; margin-top: 10px; }
+  .history-panel { margin-top: 10px; border-top: 1px solid var(--line); padding-top: 10px; }
+  .history-day { font-size: 12px; margin-bottom: 8px; }
+  .history-day .hdate { font-family: var(--font-mono); color: var(--ink-soft); }
+</style>
+</head>
+<body>
+<div id="app"></div>
+<script>
+(function() {
+  const root = document.getElementById('app');
+  let state = { view: 'landing', studentId: null, studentName: null };
+
+  const CURVE_HERO_SVG = `
+    <svg width="220" height="120" viewBox="0 0 220 120" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <line x1="20" y1="10" x2="20" y2="110" stroke="#5B6B78" stroke-width="1"/>
+      <line x1="20" y1="110" x2="210" y2="110" stroke="#5B6B78" stroke-width="1"/>
+      <path d="M25 20 C 80 40, 120 90, 200 105" stroke="#B9873E" stroke-width="2.5" fill="none"/>
+      <path d="M25 105 C 80 90, 120 40, 200 20" stroke="#3E7C7A" stroke-width="2.5" fill="none"/>
+      <circle cx="112" cy="63" r="4" fill="#22303D"/>
+      <text x="118" y="58" font-family="IBM Plex Mono" font-size="10" fill="#22303D">E</text>
+    </svg>`;
+
+  function escapeHtml(str) {
+    const d = document.createElement('div');
+    d.innerText = str;
+    return d.innerHTML.replace(/\n/g, '<br>');
+  }
+  const todayKey = () => new Date().toISOString().slice(0, 10);
+
+  function getInstructorToken() { return localStorage.getItem('ceterisInstructorToken'); }
+  function setInstructorToken(t) { localStorage.setItem('ceterisInstructorToken', t); }
+  function clearInstructorToken() { localStorage.removeItem('ceterisInstructorToken'); }
+
+  function render() {
+    if (state.view === 'landing') return renderLanding();
+    if (state.view === 'student-gate') return renderStudentGate();
+    if (state.view === 'student-chat') return renderStudentChat();
+    if (state.view === 'instructor-login') return renderInstructorLogin();
+    if (state.view === 'instructor') return renderInstructor();
+  }
+
+  function renderLanding() {
+    root.innerHTML = `
+      <div class="landing">
+        <div class="wordmark">Ceteris</div>
+        <div class="tagline">— an economics tutor, all else held equal —</div>
+        <div style="margin:28px auto;">${CURVE_HERO_SVG}</div>
+        <p style="max-width:480px;margin:0 auto;color:var(--ink-soft);font-size:14.5px;">
+          A patient, Socratic teaching assistant for principles of micro and macroeconomics.
+        </p>
+        <div class="role-buttons">
+          <button class="role-btn primary" id="btn-student">I'm a student</button>
+          <button class="role-btn" id="btn-instructor">I'm the instructor</button>
+        </div>
+      </div>`;
+    document.getElementById('btn-student').onclick = () => { state.view = 'student-gate'; render(); };
+    document.getElementById('btn-instructor').onclick = () => {
+      state.view = getInstructorToken() ? 'instructor' : 'instructor-login';
+      render();
+    };
+  }
+
+  function renderInstructorLogin() {
+    root.innerHTML = `
+      <div class="topbar"><div class="brand">Ceteris</div><button class="link-btn" id="back">← back</button></div>
+      <div class="login-gate">
+        <h2 style="font-size:20px;">Instructor access</h2>
+        <p style="color:var(--ink-soft);font-size:13.5px;">Enter the instructor password to view the dashboard.</p>
+        <div class="login-error" id="login-error" style="display:none;"></div>
+        <input id="password-input" type="password" placeholder="Password" autofocus />
+        <button class="role-btn primary" id="login-btn" style="width:100%;">Log in</button>
+      </div>`;
+    document.getElementById('back').onclick = () => { state.view = 'landing'; render(); };
+    const submit = async () => {
+      const password = document.getElementById('password-input').value;
+      const errEl = document.getElementById('login-error');
+      errEl.style.display = 'none';
+      try {
+        const res = await fetch('/api/instructor-login', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ password })
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || 'Login failed');
+        setInstructorToken(data.token);
+        state.view = 'instructor';
+        render();
+      } catch (e) {
+        errEl.textContent = e.message;
+        errEl.style.display = 'block';
+      }
+    };
+    document.getElementById('login-btn').onclick = submit;
+    document.getElementById('password-input').addEventListener('keydown', (e) => { if (e.key === 'Enter') submit(); });
+  }
+
+  function renderStudentGate() {
+    root.innerHTML = `
+      <div class="topbar"><div class="brand">Ceteris</div><button class="link-btn" id="back">← back</button></div>
+      <div class="id-gate">
+        <h2 style="font-size:20px;">Let's get started</h2>
+        <p style="color:var(--ink-soft);font-size:13.5px;">Enter your name as it appears on the class roster.</p>
+        <input id="name-input" type="text" placeholder="Full name" autofocus />
+        <button class="role-btn primary" id="enter-btn" style="width:100%;">Start session</button>
+      </div>`;
+    document.getElementById('back').onclick = () => { state.view = 'landing'; render(); };
+    document.getElementById('enter-btn').onclick = async () => {
+      const val = document.getElementById('name-input').value.trim();
+      if (!val) return;
+      state.studentName = val;
+      state.studentId = val.toLowerCase().replace(/[^a-z0-9]+/g, '-');
+      await fetch('/api/register', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ studentId: state.studentId, name: state.studentName })
+      });
+      state.view = 'student-chat';
+      render();
+    };
+    document.getElementById('name-input').addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') document.getElementById('enter-btn').click();
+    });
+  }
+
+  async function renderStudentChat() {
+    root.innerHTML = `
+      <div class="topbar"><div class="brand">Ceteris</div><div class="who">${escapeHtml(state.studentName)}</div></div>
+      <div class="student-wrap">
+        <div class="chat-layout">
+          <div class="chat-panel">
+            <div class="chat-scroll" id="chat-scroll"><div class="empty-state">Loading your session…</div></div>
+            <div class="chat-input-row">
+              <textarea id="chat-input" placeholder="Ask about anything from class…"></textarea>
+              <button class="send-btn" id="send-btn">Send</button>
+            </div>
+          </div>
+          <div class="progress-card" id="progress-card"><h3>Today's progress</h3><div style="font-size:12.5px;color:var(--ink-soft);">Starting fresh — ask your first question.</div></div>
+        </div>
+      </div>`;
+
+    let messages = [];
+    try {
+      const res = await fetch(`/api/session/${state.studentId}`);
+      const data = await res.json();
+      messages = data.transcript || [];
+      renderMessages(messages);
+      renderProgressCard(data.summary);
+    } catch (e) {
+      renderMessages([]);
+    }
+
+    document.getElementById('send-btn').onclick = handleSend;
+    document.getElementById('chat-input').addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSend(); }
+    });
+
+    function renderMessages(msgs) {
+      const scroll = document.getElementById('chat-scroll');
+      if (msgs.length === 0) {
+        scroll.innerHTML = `<div class="empty-state">No messages yet today. Ask Ceteris anything about the course material.</div>`;
+        return;
+      }
+      scroll.innerHTML = msgs.map(m => `
+        <div class="msg ${m.role === 'user' ? 'user' : 'tutor'}">
+          <span class="label">${m.role === 'user' ? 'you' : 'ceteris'}</span>
+          <div class="bubble">${escapeHtml(m.content)}</div>
+        </div>`).join('');
+      scroll.scrollTop = scroll.scrollHeight;
+    }
+
+    function renderProgressCard(s) {
+      const card = document.getElementById('progress-card');
+      if (!s) {
+        card.innerHTML = `<h3>Today's progress</h3><div style="font-size:12.5px;color:var(--ink-soft);">Starting fresh — ask your first question.</div>`;
+        return;
+      }
+      const pillClass = s.masteryLevel === 'struggling' ? 'mastery-struggling' : s.masteryLevel === 'solid' ? 'mastery-solid' : 'mastery-developing';
+      card.innerHTML = `
+        <h3>Today's progress</h3>
+        <span class="mastery-pill ${pillClass}">${s.masteryLevel || 'developing'}</span>
+        <div style="font-size:12px;color:var(--ink-soft);margin-bottom:4px;">Topics covered</div>
+        <div>${(s.topics || []).map(t => `<span class="topic-tag">${escapeHtml(t)}</span>`).join('') || '<span style="font-size:12px;color:var(--ink-soft);">none yet</span>'}</div>
+        ${(s.misconceptions || []).length ? `<div style="font-size:12px;color:var(--ink-soft);margin-top:12px;">Watch areas</div>${s.misconceptions.map(m => `<div class="miscon-item">${escapeHtml(m)}</div>`).join('')}` : ''}`;
+    }
+
+    async function handleSend() {
+      const input = document.getElementById('chat-input');
+      const text = input.value.trim();
+      if (!text) return;
+      input.value = '';
+      document.getElementById('send-btn').disabled = true;
+      messages = [...messages, { role: 'user', content: text }];
+      renderMessages(messages);
+
+      try {
+        const res = await fetch('/api/tutor', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ studentId: state.studentId, message: text })
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
+        messages = [...messages, { role: 'assistant', content: data.reply }];
+        renderMessages(messages);
+
+        const sessRes = await fetch(`/api/session/${state.studentId}`);
+        const sessData = await sessRes.json();
+        renderProgressCard(sessData.summary);
+      } catch (e) {
+        console.error('Ceteris: tutor call failed', e);
+        messages = [...messages, { role: 'assistant', content: `Something went wrong reaching the tutor: ${e.message}. Please try again.` }];
+        renderMessages(messages);
+      }
+      document.getElementById('send-btn').disabled = false;
+    }
+  }
+
+  async function instructorFetch(url) {
+    const token = getInstructorToken();
+    const res = await fetch(url, { headers: { 'x-instructor-token': token || '' } });
+    if (res.status === 401) {
+      clearInstructorToken();
+      state.view = 'instructor-login';
+      render();
+      throw new Error('Session expired');
+    }
+    return res;
+  }
+
+  async function renderInstructor() {
+    const day = todayKey();
+    root.innerHTML = `
+      <div class="topbar"><div class="brand">Ceteris</div><button class="link-btn" id="back">← back</button></div>
+      <div class="dash-wrap">
+        <div class="dash-tabs">
+          <button class="dash-tab active" id="tab-daily">Daily report</button>
+          <button class="dash-tab" id="tab-usage">Usage &amp; engagement</button>
+        </div>
+        <div class="dash-controls" id="daily-controls">
+          <label style="font-family:var(--font-mono);font-size:12px;color:var(--ink-soft);">Viewing:</label>
+          <input type="date" id="date-pick" value="${day}" />
+          <span class="dash-refresh" id="refresh-note">Loading…</span>
+          <button class="link-btn" id="refresh-btn">refresh</button>
+        </div>
+        <div id="dash-body"><div class="empty-state">Loading class data…</div></div>
+      </div>`;
+    document.getElementById('back').onclick = () => { state.view = 'landing'; render(); };
+    document.getElementById('date-pick').onchange = (e) => loadDashboard(e.target.value);
+    document.getElementById('refresh-btn').onclick = () => loadDashboard(document.getElementById('date-pick').value);
+    document.getElementById('tab-daily').onclick = () => {
+      document.getElementById('tab-daily').classList.add('active');
+      document.getElementById('tab-usage').classList.remove('active');
+      document.getElementById('daily-controls').style.display = 'flex';
+      loadDashboard(document.getElementById('date-pick').value);
+    };
+    document.getElementById('tab-usage').onclick = () => {
+      document.getElementById('tab-usage').classList.add('active');
+      document.getElementById('tab-daily').classList.remove('active');
+      document.getElementById('daily-controls').style.display = 'none';
+      loadUsage();
+    };
+    loadDashboard(day).catch(() => {});
+  }
+
+  async function loadDashboard(day) {
+    const body = document.getElementById('dash-body');
+    const note = document.getElementById('refresh-note');
+    body.innerHTML = `<div class="empty-state">Loading class data…</div>`;
+
+    let records = [];
+    try {
+      const res = await instructorFetch(`/api/dashboard?date=${day}`);
+      const data = await res.json();
+      records = data.records || [];
+    } catch (e) {
+      if (e.message !== 'Session expired') body.innerHTML = `<div class="empty-state">Couldn't reach the server. Check your connection and try refresh.</div>`;
+      return;
+    }
+
+    note.textContent = `${records.length} student${records.length === 1 ? '' : 's'} active`;
+    if (records.length === 0) {
+      body.innerHTML = `<div class="empty-state">No sessions recorded for this date yet.</div>`;
+      return;
+    }
+
+    const misconCounts = {};
+    records.forEach(r => (r.summary.misconceptions || []).forEach(m => { misconCounts[m] = (misconCounts[m] || 0) + 1; }));
+    const sortedMiscon = Object.entries(misconCounts).sort((a, b) => b[1] - a[1]).slice(0, 6);
+    const maxCount = sortedMiscon.length ? sortedMiscon[0][1] : 1;
+
+    body.innerHTML = `
+      ${sortedMiscon.length ? `
+      <div class="class-summary">
+        <h2>Class-wide watch areas</h2>
+        ${sortedMiscon.map(([m, c]) => `
+          <div class="struggle-bar-row">
+            <div class="struggle-bar-label">${escapeHtml(m)}</div>
+            <div class="struggle-bar-track"><div class="struggle-bar-fill" style="width:${(c / maxCount) * 100}%;"></div></div>
+            <div class="struggle-bar-count">${c}</div>
+          </div>`).join('')}
+      </div>` : ''}
+      <div class="student-grid">
+        ${records.map(r => {
+          const pillClass = r.summary.masteryLevel === 'struggling' ? 'mastery-struggling' : r.summary.masteryLevel === 'solid' ? 'mastery-solid' : 'mastery-developing';
+          return `
+          <div class="student-card" data-student-id="${r.studentId}">
+            <div class="sname">${escapeHtml(r.name)}</div>
+            <span class="mastery-pill ${pillClass}">${r.summary.masteryLevel || 'developing'}</span>
+            <div style="font-size:12px;color:var(--ink-soft);margin:8px 0 4px;">Topics</div>
+            <div>${(r.summary.topics || []).map(t => `<span class="topic-tag">${escapeHtml(t)}</span>`).join('') || '<span style="font-size:12px;color:var(--ink-soft);">—</span>'}</div>
+            ${(r.summary.misconceptions || []).length ? `<div style="font-size:12px;color:var(--ink-soft);margin-top:10px;">Flags</div>${r.summary.misconceptions.map(m => `<div class="miscon-item">${escapeHtml(m)}</div>`).join('')}` : ''}
+            ${r.summary.recommendedFollowUp ? `<div style="font-size:12px;font-style:italic;color:var(--ink-soft);margin-top:10px;border-top:1px solid var(--line);padding-top:8px;">${escapeHtml(r.summary.recommendedFollowUp)}</div>` : ''}
+            <button class="history-btn" data-history-for="${r.studentId}">view history over time →</button>
+            <div class="history-panel" id="history-${r.studentId}" style="display:none;"></div>
+          </div>`;
+        }).join('')}
+      </div>`;
+
+    body.querySelectorAll('[data-history-for]').forEach(btn => {
+      btn.onclick = () => toggleHistory(btn.dataset.historyFor);
+    });
+  }
+
+  async function toggleHistory(studentId) {
+    const panel = document.getElementById(`history-${studentId}`);
+    if (panel.style.display === 'block') { panel.style.display = 'none'; return; }
+    panel.style.display = 'block';
+    panel.innerHTML = `<div style="font-size:11px;color:var(--ink-soft);">Loading history…</div>`;
+    try {
+      const res = await instructorFetch(`/api/student/${studentId}/history`);
+      const data = await res.json();
+      const days = data.days || [];
+      const usageLine = data.usage
+        ? `<div style="font-size:11px;color:var(--ink-soft);margin-bottom:8px;">${data.usage.messageCount} messages across ${data.usage.daysActive.length} day${data.usage.daysActive.length === 1 ? '' : 's'} · first used ${data.usage.firstSeen} · last used ${data.usage.lastSeen}</div>`
+        : '';
+      if (days.length === 0) {
+        panel.innerHTML = usageLine + `<div style="font-size:11px;color:var(--ink-soft);">No prior sessions recorded.</div>`;
+        return;
+      }
+      panel.innerHTML = usageLine + days.map(d => `
+        <div class="history-day">
+          <span class="hdate">${d.date}</span> — ${d.summary.masteryLevel || 'developing'} ·
+          ${(d.summary.topics || []).join(', ') || 'no topics logged'}
+        </div>`).join('');
+    } catch (e) {
+      if (e.message !== 'Session expired') panel.innerHTML = `<div style="font-size:11px;color:var(--struggle);">Couldn't load history.</div>`;
+    }
+  }
+
+  async function loadUsage() {
+    const body = document.getElementById('dash-body');
+    body.innerHTML = `<div class="empty-state">Loading usage data…</div>`;
+    let rows = [];
+    try {
+      const res = await instructorFetch('/api/usage');
+      const data = await res.json();
+      rows = data.rows || [];
+    } catch (e) {
+      if (e.message !== 'Session expired') body.innerHTML = `<div class="empty-state">Couldn't reach the server.</div>`;
+      return;
+    }
+    if (rows.length === 0) {
+      body.innerHTML = `<div class="empty-state">No student activity recorded yet.</div>`;
+      return;
+    }
+    rows.sort((a, b) => b.messageCount - a.messageCount);
+    body.innerHTML = `
+      <table class="usage-table">
+        <thead><tr><th>Student</th><th>Messages sent</th><th>Days active</th><th>First used</th><th>Last used</th></tr></thead>
+        <tbody>
+          ${rows.map(r => `
+            <tr>
+              <td>${escapeHtml(r.name)}</td>
+              <td>${r.messageCount}</td>
+              <td>${r.daysActive}</td>
+              <td>${r.firstSeen || '—'}</td>
+              <td>${r.lastSeen || '—'}</td>
+            </tr>`).join('')}
+        </tbody>
+      </table>`;
+  }
+
+  render();
+})();
+</script>
+</body>
+</html>
