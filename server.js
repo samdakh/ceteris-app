@@ -1,16 +1,57 @@
 require('dotenv').config();
 const express = require('express');
-const fs = require('fs');
 const path = require('path');
 const cors = require('cors');
 const crypto = require('crypto');
+const { Pool } = require('pg');
 
 const app = express();
 app.use(cors());
 app.use(express.json());
 app.use(express.static(path.join(__dirname, 'public')));
 
-// Simple in-memory instructor session store. Tokens reset if the server restarts —
+// --- Database (Postgres) -----------------------------------------------
+// Data now lives in a real database instead of a local file, so it survives
+// server restarts/redeploys — the problem the old file-based storage had.
+const pool = new Pool({
+  connectionString: process.env.DATABASE_URL,
+  ssl: process.env.DATABASE_URL && process.env.DATABASE_URL.includes('localhost') ? false : { rejectUnauthorized: false }
+});
+
+async function initDB() {
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS students (
+      id TEXT PRIMARY KEY,
+      name TEXT NOT NULL
+    );
+    CREATE TABLE IF NOT EXISTS transcripts (
+      student_id TEXT NOT NULL,
+      day TEXT NOT NULL,
+      transcript JSONB NOT NULL DEFAULT '[]'::jsonb,
+      PRIMARY KEY (student_id, day)
+    );
+    CREATE TABLE IF NOT EXISTS summaries (
+      student_id TEXT NOT NULL,
+      day TEXT NOT NULL,
+      summary JSONB NOT NULL,
+      PRIMARY KEY (student_id, day)
+    );
+    CREATE TABLE IF NOT EXISTS usage_stats (
+      student_id TEXT PRIMARY KEY,
+      message_count INT NOT NULL DEFAULT 0,
+      days_active JSONB NOT NULL DEFAULT '[]'::jsonb,
+      first_seen TEXT,
+      last_seen TEXT
+    );
+  `);
+}
+
+function todayKey() {
+  return new Date().toISOString().slice(0, 10);
+}
+
+// --- Instructor auth -----------------------------------------------------
+// Simple in-memory session store. Tokens reset if the server restarts —
 // fine for a pilot; swap for a real session store before wider deployment.
 const instructorTokens = new Set();
 
@@ -22,32 +63,7 @@ function requireInstructor(req, res, next) {
   next();
 }
 
-const DB_PATH = path.join(__dirname, 'data', 'db.json');
-
-function loadDB() {
-  if (!fs.existsSync(DB_PATH)) {
-    fs.mkdirSync(path.dirname(DB_PATH), { recursive: true });
-    fs.writeFileSync(DB_PATH, JSON.stringify({ students: {}, transcripts: {}, summaries: {}, usage: {} }, null, 2));
-  }
-  const db = JSON.parse(fs.readFileSync(DB_PATH, 'utf-8'));
-  if (!db.usage) db.usage = {}; // migrate older db.json files that predate usage tracking
-  return db;
-}
-
-function trackUsage(db, studentId, day) {
-  const u = db.usage[studentId] || { messageCount: 0, daysActive: [], firstSeen: day, lastSeen: day };
-  u.messageCount += 1;
-  if (!u.daysActive.includes(day)) u.daysActive.push(day);
-  u.lastSeen = day;
-  db.usage[studentId] = u;
-}
-function saveDB(db) {
-  fs.writeFileSync(DB_PATH, JSON.stringify(db, null, 2));
-}
-function todayKey() {
-  return new Date().toISOString().slice(0, 10);
-}
-
+// --- Claude API ------------------------------------------------------------
 const TUTOR_SYSTEM_PROMPT = `You are Ceteris, a warm and patient economics teaching assistant for an introductory (principles-level) micro and macroeconomics course.
 
 Your approach:
@@ -70,12 +86,7 @@ async function callAnthropic(system, messages, maxTokens) {
       'x-api-key': process.env.ANTHROPIC_API_KEY,
       'anthropic-version': '2023-06-01'
     },
-    body: JSON.stringify({
-      model: 'claude-sonnet-4-6',
-      max_tokens: maxTokens,
-      system,
-      messages
-    })
+    body: JSON.stringify({ model: 'claude-sonnet-4-6', max_tokens: maxTokens, system, messages })
   });
   const data = await resp.json();
   if (!resp.ok || data.type === 'error') {
@@ -85,25 +96,39 @@ async function callAnthropic(system, messages, maxTokens) {
   return data.content.map(b => b.text || '').join('\n').trim();
 }
 
+// --- Routes ----------------------------------------------------------------
+
 // Register / update a student's display name against their id.
-app.post('/api/register', (req, res) => {
+app.post('/api/register', async (req, res) => {
   const { studentId, name } = req.body || {};
   if (!studentId || !name) return res.status(400).json({ error: 'studentId and name required' });
-  const db = loadDB();
-  db.students[studentId] = { id: studentId, name };
-  saveDB(db);
-  res.json({ ok: true });
+  try {
+    await pool.query(
+      `INSERT INTO students (id, name) VALUES ($1, $2)
+       ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name`,
+      [studentId, name]
+    );
+    res.json({ ok: true });
+  } catch (e) {
+    console.error('Ceteris: register failed —', e.message);
+    res.status(500).json({ error: 'Could not register student' });
+  }
 });
 
 // Fetch today's (or a given date's) transcript + summary for one student.
-app.get('/api/session/:studentId', (req, res) => {
-  const db = loadDB();
+app.get('/api/session/:studentId', async (req, res) => {
   const day = req.query.date || todayKey();
-  const key = `${req.params.studentId}:${day}`;
-  res.json({
-    transcript: db.transcripts[key] || [],
-    summary: db.summaries[key] || null
-  });
+  try {
+    const t = await pool.query('SELECT transcript FROM transcripts WHERE student_id=$1 AND day=$2', [req.params.studentId, day]);
+    const s = await pool.query('SELECT summary FROM summaries WHERE student_id=$1 AND day=$2', [req.params.studentId, day]);
+    res.json({
+      transcript: t.rows[0] ? t.rows[0].transcript : [],
+      summary: s.rows[0] ? s.rows[0].summary : null
+    });
+  } catch (e) {
+    console.error('Ceteris: session fetch failed —', e.message);
+    res.status(500).json({ error: 'Could not load session' });
+  }
 });
 
 // Main tutor turn: send a student message, get a reply, update the running summary.
@@ -112,21 +137,34 @@ app.post('/api/tutor', async (req, res) => {
     const { studentId, message } = req.body || {};
     if (!studentId || !message) return res.status(400).json({ error: 'studentId and message required' });
 
-    const db = loadDB();
     const day = todayKey();
-    const key = `${studentId}:${day}`;
-    const transcript = db.transcripts[key] || [];
+    const existing = await pool.query('SELECT transcript FROM transcripts WHERE student_id=$1 AND day=$2', [studentId, day]);
+    const transcript = existing.rows[0] ? existing.rows[0].transcript : [];
     transcript.push({ role: 'user', content: message });
 
-    const reply = await callAnthropic(
-      TUTOR_SYSTEM_PROMPT,
-      transcript.map(m => ({ role: m.role, content: m.content })),
-      1000
-    );
+    const reply = await callAnthropic(TUTOR_SYSTEM_PROMPT, transcript.map(m => ({ role: m.role, content: m.content })), 1000);
     transcript.push({ role: 'assistant', content: reply });
-    db.transcripts[key] = transcript;
-    trackUsage(db, studentId, day);
-    saveDB(db);
+
+    await pool.query(
+      `INSERT INTO transcripts (student_id, day, transcript) VALUES ($1, $2, $3)
+       ON CONFLICT (student_id, day) DO UPDATE SET transcript = EXCLUDED.transcript`,
+      [studentId, day, JSON.stringify(transcript)]
+    );
+
+    // Update usage stats.
+    const usageRow = await pool.query('SELECT * FROM usage_stats WHERE student_id=$1', [studentId]);
+    const u = usageRow.rows[0]
+      ? { messageCount: usageRow.rows[0].message_count, daysActive: usageRow.rows[0].days_active, firstSeen: usageRow.rows[0].first_seen, lastSeen: usageRow.rows[0].last_seen }
+      : { messageCount: 0, daysActive: [], firstSeen: day, lastSeen: day };
+    u.messageCount += 1;
+    if (!u.daysActive.includes(day)) u.daysActive.push(day);
+    u.lastSeen = day;
+    await pool.query(
+      `INSERT INTO usage_stats (student_id, message_count, days_active, first_seen, last_seen)
+       VALUES ($1, $2, $3, $4, $5)
+       ON CONFLICT (student_id) DO UPDATE SET message_count=EXCLUDED.message_count, days_active=EXCLUDED.days_active, last_seen=EXCLUDED.last_seen`,
+      [studentId, u.messageCount, JSON.stringify(u.daysActive), u.firstSeen, u.lastSeen]
+    );
 
     // Regenerate the running summary. If this step fails, the tutor reply still succeeds —
     // the dashboard will just show "analysis pending" for this session until it catches up.
@@ -135,13 +173,17 @@ app.post('/api/tutor', async (req, res) => {
       const summaryText = await callAnthropic(SUMMARY_SYSTEM_PROMPT, [{ role: 'user', content: transcriptText }], 500);
       const match = summaryText.replace(/```json|```/g, '').match(/\{[\s\S]*\}/);
       const parsed = JSON.parse(match ? match[0] : summaryText);
-      db.summaries[key] = {
+      const summary = {
         topics: Array.isArray(parsed.topics) ? parsed.topics : [],
         misconceptions: Array.isArray(parsed.misconceptions) ? parsed.misconceptions : [],
         masteryLevel: parsed.masteryLevel || 'developing',
         recommendedFollowUp: parsed.recommendedFollowUp || ''
       };
-      saveDB(db);
+      await pool.query(
+        `INSERT INTO summaries (student_id, day, summary) VALUES ($1, $2, $3)
+         ON CONFLICT (student_id, day) DO UPDATE SET summary = EXCLUDED.summary`,
+        [studentId, day, JSON.stringify(summary)]
+      );
     } catch (summaryErr) {
       console.error('Ceteris: summary generation failed —', summaryErr.message);
     }
@@ -169,58 +211,81 @@ app.post('/api/instructor-login', (req, res) => {
 });
 
 // Full history for one student across every day they've used the tool, plus their usage stats.
-app.get('/api/student/:studentId/history', requireInstructor, (req, res) => {
-  const db = loadDB();
+app.get('/api/student/:studentId/history', requireInstructor, async (req, res) => {
   const { studentId } = req.params;
-  const info = db.students[studentId];
-  if (!info) return res.status(404).json({ error: 'Student not found' });
+  try {
+    const studentRow = await pool.query('SELECT * FROM students WHERE id=$1', [studentId]);
+    if (!studentRow.rows[0]) return res.status(404).json({ error: 'Student not found' });
 
-  const days = Object.keys(db.summaries)
-    .filter(k => k.startsWith(`${studentId}:`))
-    .map(k => ({ date: k.split(':')[1], summary: db.summaries[k] }))
-    .sort((a, b) => a.date.localeCompare(b.date));
+    const summaryRows = await pool.query('SELECT day, summary FROM summaries WHERE student_id=$1 ORDER BY day ASC', [studentId]);
+    const days = summaryRows.rows.map(r => ({ date: r.day, summary: r.summary }));
 
-  res.json({ studentId, name: info.name, days, usage: db.usage[studentId] || null });
+    const usageRow = await pool.query('SELECT * FROM usage_stats WHERE student_id=$1', [studentId]);
+    const usage = usageRow.rows[0]
+      ? { messageCount: usageRow.rows[0].message_count, daysActive: usageRow.rows[0].days_active, firstSeen: usageRow.rows[0].first_seen, lastSeen: usageRow.rows[0].last_seen }
+      : null;
+
+    res.json({ studentId, name: studentRow.rows[0].name, days, usage });
+  } catch (e) {
+    console.error('Ceteris: history fetch failed —', e.message);
+    res.status(500).json({ error: 'Could not load history' });
+  }
 });
 
 // Class-wide engagement: how much each student is actually using the tool.
-app.get('/api/usage', requireInstructor, (req, res) => {
-  const db = loadDB();
-  const rows = Object.entries(db.students).map(([studentId, info]) => {
-    const u = db.usage[studentId] || { messageCount: 0, daysActive: [], firstSeen: null, lastSeen: null };
-    return {
-      studentId,
-      name: info.name,
-      messageCount: u.messageCount,
-      daysActive: u.daysActive.length,
-      firstSeen: u.firstSeen,
-      lastSeen: u.lastSeen
-    };
-  });
-  res.json({ rows });
+app.get('/api/usage', requireInstructor, async (req, res) => {
+  try {
+    const result = await pool.query(`
+      SELECT s.id AS student_id, s.name, u.message_count, u.days_active, u.first_seen, u.last_seen
+      FROM students s LEFT JOIN usage_stats u ON s.id = u.student_id
+    `);
+    const rows = result.rows.map(r => ({
+      studentId: r.student_id,
+      name: r.name,
+      messageCount: r.message_count || 0,
+      daysActive: r.days_active ? r.days_active.length : 0,
+      firstSeen: r.first_seen,
+      lastSeen: r.last_seen
+    }));
+    res.json({ rows });
+  } catch (e) {
+    console.error('Ceteris: usage fetch failed —', e.message);
+    res.status(500).json({ error: 'Could not load usage data' });
+  }
 });
 
 // Instructor dashboard data for a given date (defaults to today).
-app.get('/api/dashboard', requireInstructor, (req, res) => {
-  const db = loadDB();
+app.get('/api/dashboard', requireInstructor, async (req, res) => {
   const day = req.query.date || todayKey();
-  const records = [];
-  for (const [studentId, info] of Object.entries(db.students)) {
-    const key = `${studentId}:${day}`;
-    const summary = db.summaries[key];
-    const transcript = db.transcripts[key];
-    if (summary) {
-      records.push({ studentId, name: info.name, summary });
-    } else if (transcript && transcript.length > 0) {
-      records.push({
-        studentId,
-        name: info.name,
-        summary: { topics: [], misconceptions: [], masteryLevel: 'developing', recommendedFollowUp: 'Session logged, analysis still pending — refresh in a moment.', pending: true }
-      });
+  try {
+    const students = await pool.query('SELECT * FROM students');
+    const records = [];
+    for (const student of students.rows) {
+      const summaryRow = await pool.query('SELECT summary FROM summaries WHERE student_id=$1 AND day=$2', [student.id, day]);
+      const transcriptRow = await pool.query('SELECT transcript FROM transcripts WHERE student_id=$1 AND day=$2', [student.id, day]);
+      if (summaryRow.rows[0]) {
+        records.push({ studentId: student.id, name: student.name, summary: summaryRow.rows[0].summary });
+      } else if (transcriptRow.rows[0] && transcriptRow.rows[0].transcript.length > 0) {
+        records.push({
+          studentId: student.id,
+          name: student.name,
+          summary: { topics: [], misconceptions: [], masteryLevel: 'developing', recommendedFollowUp: 'Session logged, analysis still pending — refresh in a moment.', pending: true }
+        });
+      }
     }
+    res.json({ date: day, records });
+  } catch (e) {
+    console.error('Ceteris: dashboard fetch failed —', e.message);
+    res.status(500).json({ error: 'Could not load dashboard' });
   }
-  res.json({ date: day, records });
 });
 
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => console.log(`Ceteris server listening on port ${PORT}`));
+initDB()
+  .then(() => {
+    app.listen(PORT, () => console.log(`Ceteris server listening on port ${PORT}`));
+  })
+  .catch(e => {
+    console.error('Ceteris: failed to initialize database —', e.message);
+    process.exit(1);
+  });
