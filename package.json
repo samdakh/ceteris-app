@@ -7,12 +7,15 @@
     "start": "node server.js"
   },
   "engines": {
-    "node": ">=18"
+    "node": ">=20"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^0.132.0",
     "cors": "^2.8.5",
+    "dompurify": "^3.4.17",
     "dotenv": "^16.4.5",
     "express": "^4.19.2",
+    "marked": "^18.1.1",
     "pg": "^8.12.0"
   }
 }

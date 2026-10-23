@@ -6,7 +6,7 @@ Runs as a small Node.js server so students only need the link — no Claude acco
 ## What's inside
 - `server.js` — Express backend. Holds your Anthropic API key privately, talks to Claude on the student's behalf, and reads/writes a Postgres database.
 - `public/index.html` — the frontend (student chat + instructor dashboard), served as static files.
-- Data (student roster, transcripts, daily summaries, usage stats) lives in a **Postgres database**, not a local file — this is what makes reports permanent across server restarts.
+- Data (student roster, logins, transcripts, daily summaries, usage stats) lives in a **Postgres database**, not a local file — this is what makes reports permanent across server restarts.
 
 ## 1. Get an API key
 Create one at [console.anthropic.com](https://console.anthropic.com) → **API Keys**. This is a different account from claude.ai — it's billed per use (small, usage-based cost), separate from any Claude subscription.
@@ -40,17 +40,52 @@ On first run, the server automatically creates the tables it needs in your Supab
 
 Render's free web service tier still spins down after inactivity and loses anything stored on its own local disk — but since all your data now lives in Supabase instead, that no longer matters. The web service can restart as often as it likes; your reports stay put.
 
+## Optional: skip the API key with Workload Identity Federation
+Instead of storing a long-lived `ANTHROPIC_API_KEY` on Render, the server can authenticate with short-lived tokens that Render issues to your service and Anthropic verifies. Nothing secret is stored, so there is nothing to expire, leak, or rotate. The server uses the official Anthropic SDK, which picks federation up automatically from environment variables.
+
+**Requirements:** a Render **Pro** workspace or higher (managed OIDC is not available on the free/Hobby tiers), and an admin, owner, or primary owner role in your Anthropic organization.
+
+**One-time setup in the Claude Console** (platform.claude.com):
+1. **Settings → Service accounts** → create a service account with the **Developer** role.
+2. **Settings → Workload identity → Issuers** → add a **Custom OIDC** issuer. Issuer URL: `https://oidc.render.com/<WORKSPACE_ID>` (your Render workspace ID starts with `tea-` and is at the top of Render's workspace Settings page). JWKS source: **OIDC Discovery**.
+3. **Settings → Workload identity → Rules** → create a federation rule for that issuer and service account. Subject pattern: `workspace:<WORKSPACE_ID>:environment:default:service:<SERVICE_ID>` (the service ID starts with `srv-` and is at the top of your service's Settings page; use your environment's `evm-` ID instead of `default` if the service belongs to a Render project environment). Expected audience: `api.anthropic.com`. Token lifetime: at least 30 minutes.
+
+**On Render** (service → Environment):
+1. Add `ANTHROPIC_FEDERATION_RULE_ID` (the rule's `fdrl_...` ID), `ANTHROPIC_ORGANIZATION_ID`, `ANTHROPIC_SERVICE_ACCOUNT_ID` (`svac_...`), and `ANTHROPIC_WORKSPACE_ID`.
+2. **Delete `ANTHROPIC_API_KEY`.** If it is still set, it takes priority over federation and the app will keep using the key.
+3. Do **not** set `ANTHROPIC_IDENTITY_TOKEN_FILE` yourself. Render sets it automatically on deploy once it sees `ANTHROPIC_FEDERATION_RULE_ID`.
+4. Redeploy, then ask the tutor a question to confirm it replies. The rule's **Test connection** tab and Settings → Workload identity → authentication history in the Console show whether token exchanges are succeeding.
+
+Local testing still uses an API key in `.env` (federation only works on Render, where the identity token exists). Once federation is confirmed working on Render, delete the old API key in the Console.
+
+## Adding your students
+Students log in with their 6-character student ID (letters and/or digits, not case-sensitive). Only IDs on your roster can log in.
+
+1. Open the app, click **I'm the instructor**, and log in. The first time, with an empty roster, the dashboard opens on the **Roster** tab.
+2. Paste one student per line: the ID, optionally followed by a comma and the name (`A1B2C3, Jordan Lee`). Two columns copied straight from a spreadsheet also work. Lines without a valid ID (like a header row) are skipped and listed so you can check them.
+3. Click **Add to roster**. Pasting an ID that's already there only updates the name, so you can re-paste the full list anytime.
+4. **Remove** ends a student's access immediately; their past sessions stay in your reports.
+
+Students stay logged in on their device until they click **Log out**, so remind them to log out on shared lab computers.
+
 ## Features
-- **Student chat**: Socratic tutoring tuned for principles-level micro/macro, diagnosing misconceptions rather than just answering.
-- **Instructor password gate**: clicking "I'm the instructor" requires `INSTRUCTOR_PASSWORD`. This is a single shared password, not per-user accounts — good enough to keep casual visitors out, not a substitute for real authentication if the dashboard will ever hold sensitive data.
+- **Student chat**: Socratic tutoring tuned for principles-level micro/macro. Replies render as formatted text (bold, lists, small tables), and starter questions help first-time students begin.
+- **Student side panel**: topics explored, what the student worked through today, and two suggested next questions they can click. It never shows mastery labels or flagged mistakes; those appear only on your dashboard.
+- **Instructor password gate**: a single shared password (`INSTRUCTOR_PASSWORD`). Logins now survive server restarts and last 14 days.
 - **Daily report tab**: today's (or any past date's) per-student summary, plus a class-wide "watch areas" chart of the most common misconceptions.
 - **Progress over time**: each student card has a "view history over time" link showing every day they've used the tool.
-- **Usage & engagement tab**: total messages, distinct days active, and first/last use per student — who's actually using it.
+- **Usage & engagement tab**: messages, days active, and first/last use for everyone on the roster, including students who haven't tried it yet.
+- **Roster tab**: add and remove student IDs.
+
+## Settings
+- `CLASS_TIMEZONE` (optional, default `America/New_York`): decides when "today" starts and ends for daily reports. Any IANA zone name works, e.g. `America/Chicago`.
 
 ## Before rolling out to a full class
-- No student-side login exists — anyone with the link can type any name. Fine for a trusted pilot group; add real student auth before this touches actual grades.
+- Logging in needs only a student ID, so anyone who knows a classmate's ID could log in as them. Repeated failed logins from one network are slowed down, but treat IDs as semi-private and don't base grades on the dashboard alone.
 - Misconception detection depends on the model's read of the conversation — treat the dashboard as a helpful signal, not a grade.
-- Consider a short honor-code note on the entry screen asking students to use their real roster name.
+
+## Planned: levels and progression (not built yet)
+Gamify the student experience so students progress through levels as they use Ceteris, like a video game. The groundwork is already in place: the student panel's stats (questions, days visited, topics explored) and the per-day topic history are natural inputs for experience points, streaks, and level thresholds, and the side panel is where a level badge and progress bar would live.
 
 ## Customizing the tutor
 Edit `TUTOR_SYSTEM_PROMPT` and `SUMMARY_SYSTEM_PROMPT` in `server.js` to match your syllabus, emphasize particular units, or change the tutoring style (more/less Socratic, etc.).

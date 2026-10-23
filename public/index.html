@@ -3,473 +3,736 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>Ceteris — Economics Tutor</title>
+<title>Ceteris</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=Lora:ital,wght@0,600;1,500&family=IBM+Plex+Sans:wght@400;600&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Lora:ital,wght@0,500;0,600;1,500&family=IBM+Plex+Sans:ital,wght@0,400;0,500;0,600;1,400&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<script src="/vendor/marked.js"></script>
+<script src="/vendor/purify.js"></script>
 <style>
   :root {
-    --paper: #EAE7DE; --paper-raised: #F3F1EA; --ink: #22303D; --ink-soft: #5B6B78;
-    --line: #C9C3B4; --teal: #3E7C7A; --teal-deep: #2C5957; --ochre: #B9873E;
-    --ochre-soft: #E4D3AF; --struggle: #A24B3E;
-    --font-display: 'Lora', Georgia, serif; --font-body: 'IBM Plex Sans', sans-serif; --font-mono: 'IBM Plex Mono', monospace;
+    --paper: #EAE7DE; --paper-raised: #F6F4EE; --card: #FFFFFF;
+    --ink: #22303D; --ink-soft: #5B6B78; --ink-faint: #8A96A0;
+    --line: #D6D0C2; --teal: #3E7C7A; --teal-deep: #2C5957; --teal-tint: #E3EEEC;
+    --ochre: #B9873E; --ochre-soft: #F1E6CF; --struggle: #A24B3E; --struggle-soft: #F4E1DC;
+    --font-display: 'Lora', Georgia, serif;
+    --font-body: 'IBM Plex Sans', -apple-system, 'Segoe UI', sans-serif;
+    --font-mono: 'IBM Plex Mono', ui-monospace, monospace;
   }
   * { box-sizing: border-box; }
-  body { margin: 0; font-family: var(--font-body); color: var(--ink); background: var(--paper); }
+  html, body { margin: 0; }
+  body { font-family: var(--font-body); font-size: 15px; color: var(--ink); background: var(--paper); line-height: 1.5; }
   h1, h2, h3 { font-family: var(--font-display); font-weight: 600; margin: 0; }
+  button { font-family: inherit; }
+  :focus-visible { outline: 2px solid var(--teal); outline-offset: 2px; }
+  .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+  .mono { font-family: var(--font-mono); }
 
-  .landing { max-width: 760px; margin: 0 auto; padding: 64px 24px 40px; text-align: center; }
-  .landing .wordmark { font-family: var(--font-display); font-size: 44px; font-style: italic; }
-  .landing .tagline { font-family: var(--font-mono); font-size: 12px; text-transform: uppercase; letter-spacing: 2px; color: var(--ink-soft); margin-top: 6px; }
-  .role-buttons { display: flex; gap: 16px; justify-content: center; margin-top: 36px; flex-wrap: wrap; }
-  .role-btn { font-size: 15px; font-weight: 600; padding: 14px 26px; border-radius: 3px; border: 1.5px solid var(--ink); background: var(--paper-raised); color: var(--ink); cursor: pointer; }
-  .role-btn:hover { background: var(--teal); color: white; border-color: var(--teal); }
-  .role-btn.primary { background: var(--teal); color: white; border-color: var(--teal-deep); }
+  /* ---------- Shared chrome ---------- */
+  .topbar { position: sticky; top: 0; z-index: 5; height: 56px; display: flex; align-items: center; justify-content: space-between; padding: 0 24px; border-bottom: 1px solid var(--line); background: var(--paper-raised); }
+  .brand { font-family: var(--font-display); font-style: italic; font-weight: 500; font-size: 21px; }
+  .topbar-right { display: flex; align-items: center; gap: 16px; font-size: 13px; color: var(--ink-soft); }
+  .who .mono { font-size: 12px; margin-left: 6px; color: var(--ink-faint); }
+  .link-btn { background: none; border: none; font-family: var(--font-mono); font-size: 12px; color: var(--teal-deep); text-decoration: underline; cursor: pointer; padding: 4px 0; }
+  .role-btn { font-size: 15px; font-weight: 600; padding: 13px 26px; border-radius: 6px; border: 1.5px solid var(--ink); background: var(--paper-raised); color: var(--ink); cursor: pointer; transition: background .15s, color .15s, border-color .15s; }
+  .role-btn:hover { background: var(--ink); color: var(--paper); }
+  .role-btn.primary { background: var(--teal); color: #fff; border-color: var(--teal-deep); }
   .role-btn.primary:hover { background: var(--teal-deep); }
+  .role-btn:disabled { opacity: .55; cursor: default; }
+  .role-btn.full { width: 100%; }
 
-  .topbar { display: flex; align-items: center; justify-content: space-between; padding: 16px 28px; border-bottom: 1.5px solid var(--line); background: var(--paper-raised); }
-  .topbar .brand { font-family: var(--font-display); font-style: italic; font-size: 20px; }
-  .topbar .who { font-family: var(--font-mono); font-size: 12px; color: var(--ink-soft); }
-  .link-btn { background: none; border: none; font-family: var(--font-mono); font-size: 12px; color: var(--teal-deep); text-decoration: underline; cursor: pointer; }
+  /* ---------- Landing ---------- */
+  .landing { max-width: 760px; margin: 0 auto; padding: 72px 20px 40px; text-align: center; }
+  .wordmark { font-family: var(--font-display); font-size: 46px; font-style: italic; font-weight: 500; }
+  .tagline { font-family: var(--font-mono); font-size: 12px; text-transform: uppercase; letter-spacing: 2px; color: var(--ink-soft); margin-top: 6px; }
+  .landing-copy { max-width: 470px; margin: 0 auto; color: var(--ink-soft); font-size: 15px; }
+  .role-buttons { display: flex; gap: 14px; justify-content: center; margin-top: 34px; flex-wrap: wrap; }
 
-  .student-wrap { max-width: 900px; margin: 0 auto; padding: 0 20px; }
-  .id-gate { max-width: 420px; margin: 80px auto; text-align: center; }
-  .id-gate input { width: 100%; padding: 12px 14px; font-size: 15px; border: 1.5px solid var(--line); border-radius: 3px; margin: 18px 0; background: white; }
-  .chat-layout { display: grid; grid-template-columns: 1fr 260px; gap: 22px; margin-top: 22px; }
-  @media (max-width: 720px) { .chat-layout { grid-template-columns: 1fr; } }
+  /* ---------- Login gates ---------- */
+  .gate { padding: 72px 16px; }
+  .gate-card { max-width: 400px; margin: 0 auto; background: var(--paper-raised); border: 1px solid var(--line); border-radius: 10px; padding: 32px 28px; text-align: center; }
+  .gate-card h1 { font-size: 23px; }
+  .gate-card p { color: var(--ink-soft); font-size: 14px; margin: 8px 0 0; }
+  .id-input { width: 100%; margin: 22px 0 14px; padding: 12px; font-family: var(--font-mono); font-size: 26px; letter-spacing: .35em; text-align: center; text-transform: uppercase; border: 1.5px solid var(--line); border-radius: 8px; background: var(--card); color: var(--ink); }
+  .id-input::placeholder { color: var(--line); letter-spacing: .35em; }
+  .pw-input { width: 100%; margin: 22px 0 14px; padding: 12px 14px; font-size: 15px; border: 1.5px solid var(--line); border-radius: 8px; background: var(--card); }
+  .id-input:focus, .pw-input:focus { outline: none; border-color: var(--teal); box-shadow: 0 0 0 3px var(--teal-tint); }
+  .form-error { color: var(--struggle); background: var(--struggle-soft); font-size: 13.5px; border-radius: 6px; padding: 8px 12px; margin: -2px 0 14px; text-align: left; }
+  .fine { font-size: 12.5px !important; margin-top: 18px !important; }
 
-  .chat-panel { background: var(--paper-raised); border: 1.5px solid var(--line); border-radius: 4px; display: flex; flex-direction: column; height: 62vh; min-height: 420px; }
-  .chat-scroll { flex: 1; overflow-y: auto; padding: 20px; }
-  .msg { margin-bottom: 16px; max-width: 88%; }
-  .msg.user { margin-left: auto; text-align: right; }
-  .msg .bubble { display: inline-block; text-align: left; padding: 10px 14px; border-radius: 4px; font-size: 14.5px; line-height: 1.55; }
-  .msg.user .bubble { background: var(--teal); color: white; }
-  .msg.tutor .bubble { background: white; border: 1px solid var(--line); }
-  .msg .label { font-family: var(--font-mono); font-size: 10px; text-transform: uppercase; letter-spacing: 1px; color: var(--ink-soft); display: block; margin-bottom: 4px; }
-  .chat-input-row { display: flex; gap: 10px; padding: 14px; border-top: 1.5px solid var(--line); }
-  .chat-input-row textarea { flex: 1; resize: none; font-size: 14.5px; padding: 10px 12px; border: 1.5px solid var(--line); border-radius: 3px; height: 46px; font-family: var(--font-body); }
-  .send-btn { background: var(--ink); color: var(--paper); border: none; border-radius: 3px; padding: 0 20px; font-weight: 600; cursor: pointer; }
-  .send-btn:disabled { opacity: 0.5; cursor: default; }
+  /* ---------- Student layout ---------- */
+  .student-main { display: grid; grid-template-columns: minmax(0, 1fr) 300px; gap: 20px; max-width: 1140px; margin: 0 auto; padding: 20px; height: calc(100vh - 56px); height: calc(100dvh - 56px); }
+  .chat-panel { display: flex; flex-direction: column; min-height: 0; background: var(--card); border: 1px solid var(--line); border-radius: 10px; overflow: hidden; }
+  .chat-scroll { flex: 1; overflow-y: auto; padding: 30px 36px 12px; scroll-behavior: smooth; }
+  .side-panel { overflow-y: auto; min-height: 0; }
+  @media (max-width: 860px) {
+    .student-main { grid-template-columns: 1fr; height: auto; padding: 12px; }
+    .chat-panel { height: 72vh; height: 72dvh; }
+    .chat-scroll { padding: 20px 16px 8px; }
+    .topbar { padding: 0 16px; }
+    .who { display: none; }
+  }
 
-  .progress-card { background: var(--paper-raised); border: 1.5px solid var(--line); border-radius: 4px; padding: 18px; }
-  .progress-card h3 { font-size: 16px; margin-bottom: 10px; }
-  .mastery-pill { display: inline-block; font-family: var(--font-mono); font-size: 11px; padding: 3px 10px; border-radius: 20px; margin-bottom: 12px; }
-  .mastery-struggling { background: #F1DCD5; color: var(--struggle); }
-  .mastery-developing { background: var(--ochre-soft); color: #7A5A22; }
-  .mastery-solid { background: #D6E5D3; color: var(--teal-deep); }
-  .topic-tag { display: inline-block; font-size: 12px; background: var(--paper); border: 1px solid var(--line); padding: 3px 8px; border-radius: 3px; margin: 3px 3px 0 0; }
-  .miscon-item { font-size: 12.5px; color: var(--struggle); margin-top: 6px; padding-left: 12px; border-left: 2px solid var(--struggle); }
+  /* Welcome state */
+  .welcome { max-width: 560px; margin: 8vh auto 0; text-align: center; }
+  .welcome h2 { font-size: 27px; font-weight: 500; }
+  .welcome p { color: var(--ink-soft); margin: 10px auto 26px; max-width: 440px; }
+  .starter-list { display: grid; gap: 10px; text-align: left; }
+  .starter { display: flex; justify-content: space-between; align-items: center; gap: 12px; width: 100%; padding: 13px 16px; background: var(--paper-raised); border: 1px solid var(--line); border-radius: 8px; font-size: 14.5px; color: var(--ink); cursor: pointer; text-align: left; transition: border-color .15s, background .15s; }
+  .starter:hover { border-color: var(--teal); background: var(--card); }
+  .starter .arrow { color: var(--teal); flex-shrink: 0; }
 
-  .dash-wrap { max-width: 1100px; margin: 0 auto; padding: 28px 20px 60px; }
-  .dash-controls { display: flex; align-items: center; gap: 14px; margin-bottom: 22px; flex-wrap: wrap; }
-  .dash-controls input[type=date] { font-family: var(--font-mono); padding: 8px 10px; border: 1.5px solid var(--line); border-radius: 3px; }
-  .dash-refresh { font-family: var(--font-mono); font-size: 12px; color: var(--ink-soft); }
-  .class-summary { background: var(--paper-raised); border: 1.5px solid var(--line); border-radius: 4px; padding: 20px; margin-bottom: 24px; }
-  .class-summary h2 { font-size: 18px; margin-bottom: 12px; }
+  /* Messages */
+  .msg-user { display: flex; justify-content: flex-end; margin: 0 0 24px; }
+  .msg-user .bubble { max-width: 78%; background: var(--teal); color: #fff; padding: 10px 15px; border-radius: 16px 16px 4px 16px; white-space: pre-wrap; overflow-wrap: anywhere; font-size: 15px; }
+  .msg-tutor { display: grid; grid-template-columns: 30px minmax(0, 1fr); gap: 14px; margin: 0 0 28px; }
+  .avatar { width: 30px; height: 30px; border-radius: 50%; background: var(--ink); color: var(--paper); display: grid; place-items: center; font-family: var(--font-display); font-style: italic; font-size: 16px; margin-top: 1px; }
+  .msg-error .md { color: var(--struggle); background: var(--struggle-soft); border-radius: 8px; padding: 10px 14px; font-size: 14px; }
+
+  /* Rendered Markdown */
+  .md { font-size: 15.5px; line-height: 1.68; overflow-wrap: anywhere; }
+  .md > *:first-child { margin-top: 0; }
+  .md > *:last-child { margin-bottom: 0; }
+  .md p { margin: 0 0 .8em; }
+  .md strong { font-weight: 600; }
+  .md em { font-style: italic; }
+  .md ul, .md ol { margin: 0 0 .85em; padding-left: 1.35em; }
+  .md li { margin: .3em 0; padding-left: .15em; }
+  .md li::marker { color: var(--teal); font-weight: 600; }
+  .md h1, .md h2, .md h3, .md h4 { font-family: var(--font-display); font-size: 1.08em; margin: 1.1em 0 .4em; }
+  .md blockquote { margin: 0 0 .85em; padding: 2px 0 2px 14px; border-left: 3px solid var(--ochre); color: var(--ink-soft); }
+  .md code { font-family: var(--font-mono); font-size: .88em; background: var(--paper-raised); border: 1px solid var(--line); padding: 1px 5px; border-radius: 4px; }
+  .md pre { background: var(--paper-raised); border: 1px solid var(--line); padding: 12px 14px; border-radius: 6px; overflow-x: auto; }
+  .md pre code { border: none; padding: 0; background: none; }
+  .md a { color: var(--teal-deep); }
+  .md hr { border: 0; border-top: 1px solid var(--line); margin: 1.2em 0; }
+  .md table { border-collapse: collapse; margin: .3em 0 1em; font-size: 14px; font-variant-numeric: tabular-nums; display: block; overflow-x: auto; max-width: 100%; overflow-wrap: normal; }
+  .md th { font-family: var(--font-mono); font-size: 11.5px; font-weight: 500; text-transform: uppercase; letter-spacing: .05em; color: var(--ink-soft); text-align: left; padding: 6px 16px 6px 0; border-bottom: 1.5px solid var(--ink-soft); }
+  .md td { padding: 7px 16px 7px 0; border-bottom: 1px solid var(--line); }
+
+  /* Typing indicator */
+  .typing { display: flex; gap: 5px; align-items: center; height: 28px; }
+  .typing span { width: 7px; height: 7px; border-radius: 50%; background: var(--ink-faint); animation: blink 1.2s infinite ease-in-out; }
+  .typing span:nth-child(2) { animation-delay: .15s; }
+  .typing span:nth-child(3) { animation-delay: .3s; }
+  @keyframes blink { 0%, 80%, 100% { opacity: .25; transform: translateY(0); } 40% { opacity: 1; transform: translateY(-3px); } }
+  @media (prefers-reduced-motion: reduce) { .typing span { animation: none; opacity: .6; } .chat-scroll { scroll-behavior: auto; } }
+
+  /* Composer */
+  .composer { display: flex; gap: 10px; align-items: flex-end; padding: 14px 16px 6px; border-top: 1px solid var(--line); background: var(--card); }
+  .composer textarea { flex: 1; resize: none; font-family: var(--font-body); font-size: 15px; line-height: 1.45; padding: 11px 14px; border: 1.5px solid var(--line); border-radius: 10px; max-height: 180px; color: var(--ink); background: var(--card); }
+  .composer textarea:focus { outline: none; border-color: var(--teal); box-shadow: 0 0 0 3px var(--teal-tint); }
+  .send-btn { width: 46px; height: 46px; flex-shrink: 0; border: none; border-radius: 10px; background: var(--ink); color: var(--paper); display: grid; place-items: center; cursor: pointer; }
+  .send-btn:hover { background: var(--teal-deep); }
+  .send-btn:disabled { opacity: .4; cursor: default; }
+  .composer-hint { font-family: var(--font-mono); font-size: 11px; color: var(--ink-faint); padding: 2px 16px 10px; }
+
+  /* Student side panel */
+  .panel-card { background: var(--paper-raised); border: 1px solid var(--line); border-radius: 10px; padding: 20px; }
+  .panel-head { display: flex; justify-content: space-between; align-items: baseline; }
+  .panel-title { font-family: var(--font-display); font-size: 18px; font-weight: 600; }
+  .updating { font-family: var(--font-mono); font-size: 11px; color: var(--ink-faint); }
+  .stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-top: 14px; }
+  .stat { background: var(--card); border: 1px solid var(--line); border-radius: 8px; padding: 10px 6px; text-align: center; }
+  .stat-num { font-family: var(--font-display); font-size: 23px; font-weight: 600; line-height: 1.1; }
+  .stat-label { font-size: 11.5px; color: var(--ink-soft); line-height: 1.25; margin-top: 3px; }
+  .panel-label { font-family: var(--font-mono); font-size: 10.5px; text-transform: uppercase; letter-spacing: .09em; color: var(--ink-soft); margin: 20px 0 9px; }
+  .topic-chip { display: inline-block; font-size: 12.5px; background: var(--teal-tint); color: var(--teal-deep); padding: 4px 11px; border-radius: 999px; margin: 0 6px 6px 0; }
+  .takeaways { list-style: none; margin: 0; padding: 0; }
+  .takeaways li { display: grid; grid-template-columns: 18px 1fr; gap: 8px; font-size: 13.5px; line-height: 1.5; margin-bottom: 9px; }
+  .takeaways svg { margin-top: 3px; color: var(--teal); }
+  .next-q { display: flex; justify-content: space-between; align-items: center; gap: 10px; width: 100%; text-align: left; background: var(--card); border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px; font-size: 13.5px; color: var(--ink); cursor: pointer; margin-bottom: 8px; transition: border-color .15s; }
+  .next-q:hover { border-color: var(--teal); }
+  .next-q:disabled { opacity: .5; cursor: default; }
+  .next-q .arrow { color: var(--teal); flex-shrink: 0; }
+  .panel-empty { font-size: 13.5px; color: var(--ink-soft); margin: 18px 0 0; }
+
+  /* ---------- Instructor dashboard ---------- */
+  .dash-wrap { max-width: 1100px; margin: 0 auto; padding: 26px 20px 60px; }
+  .dash-tabs { display: flex; gap: 8px; margin-bottom: 20px; flex-wrap: wrap; }
+  .dash-tab { font-family: var(--font-mono); font-size: 12px; text-transform: uppercase; letter-spacing: .5px; padding: 8px 16px; border: 1px solid var(--line); background: var(--paper-raised); border-radius: 6px; cursor: pointer; color: var(--ink-soft); }
+  .dash-tab.active { background: var(--ink); color: var(--paper); border-color: var(--ink); }
+  .dash-controls { display: flex; align-items: center; gap: 14px; margin-bottom: 20px; flex-wrap: wrap; }
+  .dash-controls input[type=date] { font-family: var(--font-mono); padding: 8px 10px; border: 1px solid var(--line); border-radius: 6px; background: var(--card); }
+  .dash-note { font-family: var(--font-mono); font-size: 12px; color: var(--ink-soft); }
+  .box { background: var(--paper-raised); border: 1px solid var(--line); border-radius: 10px; padding: 20px; margin-bottom: 22px; }
+  .box h2 { font-size: 18px; margin-bottom: 12px; }
   .struggle-bar-row { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; }
-  .struggle-bar-label { width: 210px; font-size: 13px; flex-shrink: 0; }
+  .struggle-bar-label { width: 240px; font-size: 13px; flex-shrink: 0; }
   .struggle-bar-track { flex: 1; background: var(--paper); border-radius: 3px; height: 10px; overflow: hidden; }
   .struggle-bar-fill { height: 100%; background: var(--struggle); }
   .struggle-bar-count { font-family: var(--font-mono); font-size: 11px; color: var(--ink-soft); width: 26px; text-align: right; }
   .student-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 16px; }
-  .student-card { background: var(--paper-raised); border: 1.5px solid var(--line); border-radius: 4px; padding: 16px; }
-  .student-card .sname { font-family: var(--font-display); font-size: 16px; margin-bottom: 4px; }
-  .empty-state { text-align: center; padding: 60px 20px; color: var(--ink-soft); font-family: var(--font-mono); font-size: 13px; }
-
-  .login-gate { max-width: 380px; margin: 90px auto; text-align: center; }
-  .login-gate input { width: 100%; padding: 12px 14px; font-size: 15px; border: 1.5px solid var(--line); border-radius: 3px; margin: 18px 0; background: white; }
-  .login-error { color: var(--struggle); font-size: 13px; margin-top: -8px; margin-bottom: 12px; }
-
-  .dash-tabs { display: flex; gap: 8px; margin-bottom: 20px; }
-  .dash-tab { font-family: var(--font-mono); font-size: 12px; text-transform: uppercase; letter-spacing: 0.5px; padding: 8px 16px; border: 1.5px solid var(--line); background: var(--paper-raised); border-radius: 3px; cursor: pointer; color: var(--ink-soft); }
-  .dash-tab.active { background: var(--ink); color: var(--paper); border-color: var(--ink); }
-
-  .usage-table { width: 100%; border-collapse: collapse; background: var(--paper-raised); border: 1.5px solid var(--line); border-radius: 4px; overflow: hidden; }
-  .usage-table th, .usage-table td { text-align: left; padding: 10px 14px; font-size: 13px; border-bottom: 1px solid var(--line); }
-  .usage-table th { font-family: var(--font-mono); font-size: 11px; text-transform: uppercase; color: var(--ink-soft); background: var(--paper); }
-  .usage-table tr:last-child td { border-bottom: none; }
-
+  .student-card { background: var(--paper-raised); border: 1px solid var(--line); border-radius: 10px; padding: 16px; }
+  .sname { font-family: var(--font-display); font-size: 16px; }
+  .sid { font-family: var(--font-mono); font-size: 11px; color: var(--ink-faint); margin-bottom: 8px; }
+  .mastery-pill { display: inline-block; font-family: var(--font-mono); font-size: 11px; padding: 3px 10px; border-radius: 20px; margin-bottom: 8px; }
+  .mastery-struggling { background: var(--struggle-soft); color: var(--struggle); }
+  .mastery-developing { background: var(--ochre-soft); color: #7A5A22; }
+  .mastery-solid { background: #D6E5D3; color: var(--teal-deep); }
+  .topic-tag { display: inline-block; font-size: 12px; background: var(--card); border: 1px solid var(--line); padding: 3px 8px; border-radius: 4px; margin: 3px 3px 0 0; }
+  .miscon-item { font-size: 12.5px; color: var(--struggle); margin-top: 6px; padding-left: 12px; border-left: 2px solid var(--struggle); }
+  .small-label { font-size: 12px; color: var(--ink-soft); margin: 10px 0 4px; }
+  .followup { font-size: 12px; font-style: italic; color: var(--ink-soft); margin-top: 10px; border-top: 1px solid var(--line); padding-top: 8px; }
   .history-btn { font-family: var(--font-mono); font-size: 11px; color: var(--teal-deep); background: none; border: none; text-decoration: underline; cursor: pointer; padding: 0; margin-top: 10px; }
   .history-panel { margin-top: 10px; border-top: 1px solid var(--line); padding-top: 10px; }
   .history-day { font-size: 12px; margin-bottom: 8px; }
   .history-day .hdate { font-family: var(--font-mono); color: var(--ink-soft); }
+  .data-table { width: 100%; border-collapse: collapse; background: var(--paper-raised); border: 1px solid var(--line); border-radius: 10px; overflow: hidden; }
+  .data-table th, .data-table td { text-align: left; padding: 10px 14px; font-size: 13px; border-bottom: 1px solid var(--line); }
+  .data-table th { font-family: var(--font-mono); font-size: 11px; font-weight: 500; text-transform: uppercase; color: var(--ink-soft); background: var(--paper); }
+  .data-table tr:last-child td { border-bottom: none; }
+  .data-table .muted { color: var(--ink-faint); }
+  .table-scroll { overflow-x: auto; }
+  .roster-grid { display: grid; grid-template-columns: minmax(0, 380px) minmax(0, 1fr); gap: 22px; align-items: start; }
+  @media (max-width: 860px) { .roster-grid { grid-template-columns: 1fr; } .struggle-bar-label { width: 140px; } }
+  .help { font-size: 13.5px; color: var(--ink-soft); margin: 0 0 12px; }
+  .roster-input { width: 100%; font-family: var(--font-mono); font-size: 13px; line-height: 1.6; padding: 10px 12px; border: 1px solid var(--line); border-radius: 6px; background: var(--card); resize: vertical; }
+  .roster-input:focus { outline: none; border-color: var(--teal); box-shadow: 0 0 0 3px var(--teal-tint); }
+  .roster-actions { display: flex; align-items: center; gap: 12px; margin-top: 12px; flex-wrap: wrap; }
+  .roster-result { font-size: 13px; color: var(--ink-soft); margin-top: 12px; }
+  .roster-result .warn { color: var(--struggle); }
+  .remove-btn { font-family: var(--font-mono); font-size: 11px; background: none; border: 1px solid var(--line); border-radius: 4px; padding: 3px 8px; color: var(--ink-soft); cursor: pointer; }
+  .remove-btn.confirm { border-color: var(--struggle); color: #fff; background: var(--struggle); }
+  .empty-state { text-align: center; padding: 56px 20px; color: var(--ink-soft); font-family: var(--font-mono); font-size: 13px; }
 </style>
 </head>
 <body>
 <div id="app"></div>
 <script>
-(function() {
+(function () {
   const root = document.getElementById('app');
-  let state = { view: 'landing', studentId: null, studentName: null };
+  const STUDENT_KEY = 'ceterisStudentToken';
+  const INSTRUCTOR_KEY = 'ceterisInstructorToken';
+  const store = {
+    get(k) { try { return localStorage.getItem(k); } catch (e) { return null; } },
+    set(k, v) { try { localStorage.setItem(k, v); } catch (e) {} },
+    del(k) { try { localStorage.removeItem(k); } catch (e) {} }
+  };
+  let state = { view: 'landing', student: null };
 
-  const CURVE_HERO_SVG = `
-    <svg width="220" height="120" viewBox="0 0 220 120" fill="none" xmlns="http://www.w3.org/2000/svg">
+  // ---------- Helpers ----------
+  if (window.marked) marked.setOptions({ gfm: true, breaks: true });
+  if (window.DOMPurify) {
+    DOMPurify.addHook('afterSanitizeAttributes', node => {
+      if (node.tagName === 'A') { node.setAttribute('target', '_blank'); node.setAttribute('rel', 'noopener noreferrer'); }
+    });
+  }
+  function escapeHtml(str) {
+    return String(str == null ? '' : str).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+  }
+  function renderMarkdown(text) {
+    if (window.marked && window.DOMPurify) return DOMPurify.sanitize(marked.parse(String(text || '')));
+    return '<p>' + escapeHtml(text).replace(/\n/g, '<br>') + '</p>';
+  }
+  const localToday = () => new Date().toLocaleDateString('en-CA');
+  const ARROW = '<svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M3 8h9M8.5 4.5 12 8l-3.5 3.5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+  const SEND = '<svg width="18" height="18" viewBox="0 0 18 18" fill="none" aria-hidden="true"><path d="M9 14.5V3.5M4.5 8 9 3.5 13.5 8" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+  const CHECK = '<svg width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden="true"><circle cx="7" cy="7" r="6.25" stroke="currentColor" stroke-width="1.2"/><path d="M4.3 7.2 6.1 9l3.6-3.8" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+  const CURVES = `
+    <svg width="220" height="120" viewBox="0 0 220 120" fill="none" aria-hidden="true">
       <line x1="20" y1="10" x2="20" y2="110" stroke="#5B6B78" stroke-width="1"/>
       <line x1="20" y1="110" x2="210" y2="110" stroke="#5B6B78" stroke-width="1"/>
-      <path d="M25 20 C 80 40, 120 90, 200 105" stroke="#B9873E" stroke-width="2.5" fill="none"/>
-      <path d="M25 105 C 80 90, 120 40, 200 20" stroke="#3E7C7A" stroke-width="2.5" fill="none"/>
+      <path d="M25 20 C 80 40, 120 90, 200 105" stroke="#B9873E" stroke-width="2.5"/>
+      <path d="M25 105 C 80 90, 120 40, 200 20" stroke="#3E7C7A" stroke-width="2.5"/>
       <circle cx="112" cy="63" r="4" fill="#22303D"/>
       <text x="118" y="58" font-family="IBM Plex Mono" font-size="10" fill="#22303D">E</text>
     </svg>`;
 
-  function escapeHtml(str) {
-    const d = document.createElement('div');
-    d.innerText = str;
-    return d.innerHTML.replace(/\n/g, '<br>');
+  async function api(path, opts) {
+    const { method = 'GET', body, token } = opts || {};
+    const headers = {};
+    if (body !== undefined) headers['Content-Type'] = 'application/json';
+    if (token) headers['Authorization'] = 'Bearer ' + token;
+    const res = await fetch(path, { method, headers, body: body !== undefined ? JSON.stringify(body) : undefined });
+    let data = {};
+    try { data = await res.json(); } catch (e) {}
+    if (!res.ok) {
+      const err = new Error(data.error || `Request failed (${res.status})`);
+      err.status = res.status;
+      throw err;
+    }
+    return data;
   }
-  const todayKey = () => new Date().toISOString().slice(0, 10);
 
-  function getInstructorToken() { return localStorage.getItem('ceterisInstructorToken'); }
-  function setInstructorToken(t) { localStorage.setItem('ceterisInstructorToken', t); }
-  function clearInstructorToken() { localStorage.removeItem('ceterisInstructorToken'); }
-
+  function go(view) { state.view = view; render(); }
   function render() {
-    if (state.view === 'landing') return renderLanding();
-    if (state.view === 'student-gate') return renderStudentGate();
-    if (state.view === 'student-chat') return renderStudentChat();
-    if (state.view === 'instructor-login') return renderInstructorLogin();
-    if (state.view === 'instructor') return renderInstructor();
+    ({ 'landing': renderLanding, 'student-login': renderStudentLogin, 'student-chat': renderStudentChat,
+       'instructor-login': renderInstructorLogin, 'instructor': renderInstructor })[state.view]();
   }
 
+  // ---------- Landing ----------
   function renderLanding() {
     root.innerHTML = `
-      <div class="landing">
+      <main class="landing">
         <div class="wordmark">Ceteris</div>
-        <div class="tagline">— an economics tutor, all else held equal —</div>
-        <div style="margin:28px auto;">${CURVE_HERO_SVG}</div>
-        <p style="max-width:480px;margin:0 auto;color:var(--ink-soft);font-size:14.5px;">
-          A patient, Socratic teaching assistant for principles of micro and macroeconomics.
-        </p>
+        <div class="tagline">an economics tutor, all else held equal</div>
+        <div style="margin:28px auto;">${CURVES}</div>
+        <p class="landing-copy">A patient teaching assistant for principles of micro and macroeconomics. Bring a concept, a graph, or a problem you're stuck on.</p>
         <div class="role-buttons">
           <button class="role-btn primary" id="btn-student">I'm a student</button>
           <button class="role-btn" id="btn-instructor">I'm the instructor</button>
         </div>
-      </div>`;
-    document.getElementById('btn-student').onclick = () => { state.view = 'student-gate'; render(); };
-    document.getElementById('btn-instructor').onclick = () => {
-      state.view = getInstructorToken() ? 'instructor' : 'instructor-login';
-      render();
-    };
+      </main>`;
+    document.getElementById('btn-student').onclick = () => go('student-login');
+    document.getElementById('btn-instructor').onclick = () => go(store.get(INSTRUCTOR_KEY) ? 'instructor' : 'instructor-login');
   }
 
-  function renderInstructorLogin() {
+  // ---------- Student login ----------
+  function renderStudentLogin() {
     root.innerHTML = `
-      <div class="topbar"><div class="brand">Ceteris</div><button class="link-btn" id="back">← back</button></div>
-      <div class="login-gate">
-        <h2 style="font-size:20px;">Instructor access</h2>
-        <p style="color:var(--ink-soft);font-size:13.5px;">Enter the instructor password to view the dashboard.</p>
-        <div class="login-error" id="login-error" style="display:none;"></div>
-        <input id="password-input" type="password" placeholder="Password" autofocus />
-        <button class="role-btn primary" id="login-btn" style="width:100%;">Log in</button>
-      </div>`;
-    document.getElementById('back').onclick = () => { state.view = 'landing'; render(); };
-    const submit = async () => {
-      const password = document.getElementById('password-input').value;
-      const errEl = document.getElementById('login-error');
-      errEl.style.display = 'none';
+      <header class="topbar"><div class="brand">Ceteris</div><button class="link-btn" id="back">← back</button></header>
+      <main class="gate">
+        <form class="gate-card" id="login-form" novalidate>
+          <h1>Welcome to Ceteris</h1>
+          <p>Enter your 6-character student ID.</p>
+          <label for="sid" class="sr-only">Student ID</label>
+          <input id="sid" class="id-input" maxlength="6" autocomplete="off" autocapitalize="characters" spellcheck="false" placeholder="······" />
+          <div class="form-error" id="err" role="alert" hidden></div>
+          <button class="role-btn primary full" id="go" type="submit">Start session</button>
+          <p class="fine">Your instructor sees a summary of what you worked on, not your full conversation.</p>
+        </form>
+      </main>`;
+    const input = document.getElementById('sid');
+    const err = document.getElementById('err');
+    const btn = document.getElementById('go');
+    input.focus();
+    input.addEventListener('input', () => { input.value = input.value.toUpperCase().replace(/[^A-Z0-9]/g, ''); err.hidden = true; });
+    document.getElementById('back').onclick = () => go('landing');
+    document.getElementById('login-form').onsubmit = async e => {
+      e.preventDefault();
+      const studentId = input.value.trim();
+      if (studentId.length !== 6) { err.textContent = 'Student IDs are 6 letters or digits.'; err.hidden = false; return; }
+      btn.disabled = true;
       try {
-        const res = await fetch('/api/instructor-login', {
-          method: 'POST', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ password })
-        });
-        const data = await res.json();
-        if (!res.ok) throw new Error(data.error || 'Login failed');
-        setInstructorToken(data.token);
-        state.view = 'instructor';
-        render();
-      } catch (e) {
-        errEl.textContent = e.message;
-        errEl.style.display = 'block';
+        const data = await api('/api/student-login', { method: 'POST', body: { studentId } });
+        store.set(STUDENT_KEY, data.token);
+        state.student = { studentId: data.studentId, name: data.name };
+        go('student-chat');
+      } catch (ex) {
+        err.textContent = ex.message;
+        err.hidden = false;
+        btn.disabled = false;
       }
     };
-    document.getElementById('login-btn').onclick = submit;
-    document.getElementById('password-input').addEventListener('keydown', (e) => { if (e.key === 'Enter') submit(); });
   }
 
-  function renderStudentGate() {
-    root.innerHTML = `
-      <div class="topbar"><div class="brand">Ceteris</div><button class="link-btn" id="back">← back</button></div>
-      <div class="id-gate">
-        <h2 style="font-size:20px;">Let's get started</h2>
-        <p style="color:var(--ink-soft);font-size:13.5px;">Enter your name as it appears on the class roster.</p>
-        <input id="name-input" type="text" placeholder="Full name" autofocus />
-        <button class="role-btn primary" id="enter-btn" style="width:100%;">Start session</button>
-      </div>`;
-    document.getElementById('back').onclick = () => { state.view = 'landing'; render(); };
-    document.getElementById('enter-btn').onclick = async () => {
-      const val = document.getElementById('name-input').value.trim();
-      if (!val) return;
-      state.studentName = val;
-      state.studentId = val.toLowerCase().replace(/[^a-z0-9]+/g, '-');
-      await fetch('/api/register', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ studentId: state.studentId, name: state.studentName })
-      });
-      state.view = 'student-chat';
-      render();
-    };
-    document.getElementById('name-input').addEventListener('keydown', (e) => {
-      if (e.key === 'Enter') document.getElementById('enter-btn').click();
-    });
-  }
+  // ---------- Student chat ----------
+  const STARTERS = [
+    'Why does a price ceiling cause a shortage?',
+    "What's the difference between a shift and a movement along a curve?",
+    'Can you help me understand opportunity cost?'
+  ];
 
   async function renderStudentChat() {
+    const s = state.student;
+    const token = store.get(STUDENT_KEY);
+    const firstName = s.name ? s.name.split(' ')[0] : null;
     root.innerHTML = `
-      <div class="topbar"><div class="brand">Ceteris</div><div class="who">${escapeHtml(state.studentName)}</div></div>
-      <div class="student-wrap">
-        <div class="chat-layout">
-          <div class="chat-panel">
-            <div class="chat-scroll" id="chat-scroll"><div class="empty-state">Loading your session…</div></div>
-            <div class="chat-input-row">
-              <textarea id="chat-input" placeholder="Ask about anything from class…"></textarea>
-              <button class="send-btn" id="send-btn">Send</button>
-            </div>
-          </div>
-          <div class="progress-card" id="progress-card"><h3>Today's progress</h3><div style="font-size:12.5px;color:var(--ink-soft);">Starting fresh — ask your first question.</div></div>
+      <header class="topbar">
+        <div class="brand">Ceteris</div>
+        <div class="topbar-right">
+          <span class="who">${escapeHtml(s.name || '')}<span class="mono">${escapeHtml(s.studentId)}</span></span>
+          <button class="link-btn" id="logout">Log out</button>
         </div>
-      </div>`;
+      </header>
+      <main class="student-main">
+        <section class="chat-panel" aria-label="Conversation">
+          <div class="chat-scroll" id="chat-scroll" role="log" aria-live="polite"></div>
+          <form class="composer" id="composer">
+            <label for="chat-input" class="sr-only">Your question</label>
+            <textarea id="chat-input" rows="1" placeholder="${window.matchMedia('(max-width: 600px)').matches ? 'Ask a question…' : "Ask about a concept, a graph, or a problem you're stuck on…"}"></textarea>
+            <button class="send-btn" id="send-btn" type="submit" aria-label="Send">${SEND}</button>
+          </form>
+          <div class="composer-hint">Enter to send · Shift + Enter for a new line</div>
+        </section>
+        <aside class="side-panel" id="side-panel" aria-label="Today's session"></aside>
+      </main>`;
 
-    let messages = [];
-    try {
-      const res = await fetch(`/api/session/${state.studentId}`);
-      const data = await res.json();
-      messages = data.transcript || [];
-      renderMessages(messages);
-      renderProgressCard(data.summary);
-    } catch (e) {
-      renderMessages([]);
-    }
+    const scroll = document.getElementById('chat-scroll');
+    const input = document.getElementById('chat-input');
+    const sendBtn = document.getElementById('send-btn');
+    const side = document.getElementById('side-panel');
+    let messages = [], panel = null, stats = { questionsToday: 0, daysActive: 0, topicsExplored: 0 };
+    let busy = false, updating = false;
 
-    document.getElementById('send-btn').onclick = handleSend;
-    document.getElementById('chat-input').addEventListener('keydown', (e) => {
-      if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSend(); }
-    });
+    document.getElementById('logout').onclick = () => logoutStudent();
 
-    function renderMessages(msgs) {
-      const scroll = document.getElementById('chat-scroll');
-      if (msgs.length === 0) {
-        scroll.innerHTML = `<div class="empty-state">No messages yet today. Ask Ceteris anything about the course material.</div>`;
+    function renderMessages() {
+      if (messages.length === 0) {
+        scroll.innerHTML = `
+          <div class="welcome">
+            <h2>${firstName ? 'Hi, ' + escapeHtml(firstName) + '.' : 'Hi there.'}</h2>
+            <p>Ask about anything from class. I'll help you reason it through step by step rather than just hand you the answer.</p>
+            <div class="starter-list">
+              ${STARTERS.map(q => `<button class="starter" data-q="${escapeHtml(q)}"><span>${escapeHtml(q)}</span><span class="arrow">${ARROW}</span></button>`).join('')}
+            </div>
+          </div>`;
+        scroll.querySelectorAll('[data-q]').forEach(b => b.onclick = () => send(b.dataset.q));
         return;
       }
-      scroll.innerHTML = msgs.map(m => `
-        <div class="msg ${m.role === 'user' ? 'user' : 'tutor'}">
-          <span class="label">${m.role === 'user' ? 'you' : 'ceteris'}</span>
-          <div class="bubble">${escapeHtml(m.content)}</div>
-        </div>`).join('');
+      scroll.innerHTML = messages.map(m => {
+        if (m.role === 'user') return `<div class="msg-user"><div class="bubble">${escapeHtml(m.content)}</div></div>`;
+        const cls = m.role === 'error' ? 'msg-tutor msg-error' : 'msg-tutor';
+        return `<div class="${cls}"><div class="avatar" aria-hidden="true">C</div><div class="md">${m.role === 'error' ? '<p>' + escapeHtml(m.content) + '</p>' : renderMarkdown(m.content)}</div></div>`;
+      }).join('') + (busy ? `<div class="msg-tutor"><div class="avatar" aria-hidden="true">C</div><div class="typing" aria-label="Ceteris is writing"><span></span><span></span><span></span></div></div>` : '');
       scroll.scrollTop = scroll.scrollHeight;
     }
 
-    function renderProgressCard(s) {
-      const card = document.getElementById('progress-card');
-      if (!s) {
-        card.innerHTML = `<h3>Today's progress</h3><div style="font-size:12.5px;color:var(--ink-soft);">Starting fresh — ask your first question.</div>`;
-        return;
-      }
-      const pillClass = s.masteryLevel === 'struggling' ? 'mastery-struggling' : s.masteryLevel === 'solid' ? 'mastery-solid' : 'mastery-developing';
-      card.innerHTML = `
-        <h3>Today's progress</h3>
-        <span class="mastery-pill ${pillClass}">${s.masteryLevel || 'developing'}</span>
-        <div style="font-size:12px;color:var(--ink-soft);margin-bottom:4px;">Topics covered</div>
-        <div>${(s.topics || []).map(t => `<span class="topic-tag">${escapeHtml(t)}</span>`).join('') || '<span style="font-size:12px;color:var(--ink-soft);">none yet</span>'}</div>
-        ${(s.misconceptions || []).length ? `<div style="font-size:12px;color:var(--ink-soft);margin-top:12px;">Watch areas</div>${s.misconceptions.map(m => `<div class="miscon-item">${escapeHtml(m)}</div>`).join('')}` : ''}`;
+    function stat(n, singular, plural) {
+      return `<div class="stat"><div class="stat-num">${n}</div><div class="stat-label">${n === 1 ? singular : plural}</div></div>`;
     }
 
-    async function handleSend() {
-      const input = document.getElementById('chat-input');
-      const text = input.value.trim();
-      if (!text) return;
-      input.value = '';
-      document.getElementById('send-btn').disabled = true;
-      messages = [...messages, { role: 'user', content: text }];
-      renderMessages(messages);
+    function renderPanel() {
+      const has = panel && (panel.topics.length || panel.takeaways.length || panel.suggestedQuestions.length);
+      side.innerHTML = `
+        <div class="panel-card">
+          <div class="panel-head"><div class="panel-title">Today's session</div>${updating ? '<span class="updating">updating…</span>' : ''}</div>
+          <div class="stats">
+            ${stat(stats.questionsToday, 'question today', 'questions today')}
+            ${stat(stats.daysActive, 'day visited', 'days visited')}
+            ${stat(stats.topicsExplored, 'topic explored', 'topics explored')}
+          </div>
+          ${!has ? `<p class="panel-empty">As you chat, this panel collects the ideas you've worked through today and suggests where to go next.</p>` : ''}
+          ${has && panel.topics.length ? `<div class="panel-label">Topics you explored</div><div>${panel.topics.map(t => `<span class="topic-chip">${escapeHtml(t)}</span>`).join('')}</div>` : ''}
+          ${has && panel.takeaways.length ? `<div class="panel-label">What you worked through</div><ul class="takeaways">${panel.takeaways.map(t => `<li>${CHECK}<span>${escapeHtml(t)}</span></li>`).join('')}</ul>` : ''}
+          ${has && panel.suggestedQuestions.length ? `<div class="panel-label">Try asking next</div>${panel.suggestedQuestions.map(q => `<button class="next-q" data-q="${escapeHtml(q)}" ${busy ? 'disabled' : ''}><span>${escapeHtml(q)}</span><span class="arrow">${ARROW}</span></button>`).join('')}` : ''}
+        </div>`;
+      side.querySelectorAll('[data-q]').forEach(b => b.onclick = () => send(b.dataset.q));
+    }
 
+    function setBusy(v) {
+      busy = v;
+      sendBtn.disabled = v;
+      renderMessages();
+      renderPanel();
+    }
+
+    function autoGrow() { input.style.height = 'auto'; input.style.height = Math.min(input.scrollHeight, 180) + 'px'; }
+
+    async function refreshPanel() {
+      updating = true; renderPanel();
       try {
-        const res = await fetch('/api/tutor', {
-          method: 'POST', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ studentId: state.studentId, message: text })
-        });
-        const data = await res.json();
-        if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
-        messages = [...messages, { role: 'assistant', content: data.reply }];
-        renderMessages(messages);
-
-        const sessRes = await fetch(`/api/session/${state.studentId}`);
-        const sessData = await sessRes.json();
-        renderProgressCard(sessData.summary);
+        const data = await api('/api/session/summarize', { method: 'POST', token });
+        if (data.panel) panel = data.panel;
+        if (data.stats) stats = data.stats;
       } catch (e) {
-        console.error('Ceteris: tutor call failed', e);
-        messages = [...messages, { role: 'assistant', content: `Something went wrong reaching the tutor: ${e.message}. Please try again.` }];
-        renderMessages(messages);
+        if (e.status === 401) return logoutStudent();
       }
-      document.getElementById('send-btn').disabled = false;
+      updating = false; renderPanel();
     }
+
+    async function send(text) {
+      text = String(text || '').trim();
+      if (!text || busy) return;
+      input.value = ''; autoGrow();
+      messages.push({ role: 'user', content: text });
+      setBusy(true);
+      try {
+        const data = await api('/api/tutor', { method: 'POST', body: { message: text }, token });
+        messages.push({ role: 'assistant', content: data.reply });
+        stats.questionsToday += 1;
+      } catch (e) {
+        if (e.status === 401) return logoutStudent();
+        messages.push({ role: 'error', content: e.message + ' Your question is still above, so you can send it again.' });
+      }
+      setBusy(false);
+      input.focus();
+      if (messages[messages.length - 1].role === 'assistant') refreshPanel();
+    }
+
+    document.getElementById('composer').onsubmit = e => { e.preventDefault(); send(input.value); };
+    input.addEventListener('input', autoGrow);
+    input.addEventListener('keydown', e => {
+      if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) { e.preventDefault(); send(input.value); }
+    });
+
+    renderMessages();
+    renderPanel();
+    try {
+      const data = await api('/api/session', { token });
+      messages = data.transcript || [];
+      panel = data.panel;
+      stats = data.stats || stats;
+    } catch (e) {
+      if (e.status === 401) return logoutStudent();
+    }
+    renderMessages();
+    renderPanel();
+    input.focus();
   }
 
-  async function instructorFetch(url) {
-    const token = getInstructorToken();
-    const res = await fetch(url, { headers: { 'x-instructor-token': token || '' } });
-    if (res.status === 401) {
-      clearInstructorToken();
-      state.view = 'instructor-login';
-      render();
-      throw new Error('Session expired');
-    }
-    return res;
+  function logoutStudent() {
+    const token = store.get(STUDENT_KEY);
+    if (token) api('/api/logout', { method: 'POST', token }).catch(() => {});
+    store.del(STUDENT_KEY);
+    state.student = null;
+    go('student-login');
   }
 
-  async function renderInstructor() {
-    const day = todayKey();
+  // ---------- Instructor login ----------
+  function renderInstructorLogin() {
     root.innerHTML = `
-      <div class="topbar"><div class="brand">Ceteris</div><button class="link-btn" id="back">← back</button></div>
-      <div class="dash-wrap">
-        <div class="dash-tabs">
-          <button class="dash-tab active" id="tab-daily">Daily report</button>
-          <button class="dash-tab" id="tab-usage">Usage &amp; engagement</button>
-        </div>
-        <div class="dash-controls" id="daily-controls">
-          <label style="font-family:var(--font-mono);font-size:12px;color:var(--ink-soft);">Viewing:</label>
-          <input type="date" id="date-pick" value="${day}" />
-          <span class="dash-refresh" id="refresh-note">Loading…</span>
-          <button class="link-btn" id="refresh-btn">refresh</button>
-        </div>
-        <div id="dash-body"><div class="empty-state">Loading class data…</div></div>
-      </div>`;
-    document.getElementById('back').onclick = () => { state.view = 'landing'; render(); };
-    document.getElementById('date-pick').onchange = (e) => loadDashboard(e.target.value);
-    document.getElementById('refresh-btn').onclick = () => loadDashboard(document.getElementById('date-pick').value);
-    document.getElementById('tab-daily').onclick = () => {
-      document.getElementById('tab-daily').classList.add('active');
-      document.getElementById('tab-usage').classList.remove('active');
-      document.getElementById('daily-controls').style.display = 'flex';
-      loadDashboard(document.getElementById('date-pick').value);
+      <header class="topbar"><div class="brand">Ceteris</div><button class="link-btn" id="back">← back</button></header>
+      <main class="gate">
+        <form class="gate-card" id="login-form" novalidate>
+          <h1>Instructor access</h1>
+          <p>Enter the instructor password to open the dashboard.</p>
+          <label for="pw" class="sr-only">Password</label>
+          <input id="pw" class="pw-input" type="password" placeholder="Password" autocomplete="current-password" />
+          <div class="form-error" id="err" role="alert" hidden></div>
+          <button class="role-btn primary full" id="go" type="submit">Log in</button>
+        </form>
+      </main>`;
+    const pw = document.getElementById('pw');
+    const err = document.getElementById('err');
+    pw.focus();
+    document.getElementById('back').onclick = () => go('landing');
+    document.getElementById('login-form').onsubmit = async e => {
+      e.preventDefault();
+      err.hidden = true;
+      try {
+        const data = await api('/api/instructor-login', { method: 'POST', body: { password: pw.value } });
+        store.set(INSTRUCTOR_KEY, data.token);
+        go('instructor');
+      } catch (ex) {
+        err.textContent = ex.message;
+        err.hidden = false;
+      }
     };
-    document.getElementById('tab-usage').onclick = () => {
-      document.getElementById('tab-usage').classList.add('active');
-      document.getElementById('tab-daily').classList.remove('active');
-      document.getElementById('daily-controls').style.display = 'none';
-      loadUsage();
-    };
-    loadDashboard(day).catch(() => {});
   }
 
-  async function loadDashboard(day) {
+  // ---------- Instructor dashboard ----------
+  async function iapi(path, opts) {
+    try {
+      return await api(path, Object.assign({}, opts, { token: store.get(INSTRUCTOR_KEY) }));
+    } catch (e) {
+      if (e.status === 401) { store.del(INSTRUCTOR_KEY); go('instructor-login'); }
+      throw e;
+    }
+  }
+  const displayName = r => r.name || r.studentId;
+
+  function renderInstructor() {
+    root.innerHTML = `
+      <header class="topbar">
+        <div class="brand">Ceteris</div>
+        <div class="topbar-right"><span>Instructor</span><button class="link-btn" id="logout">Log out</button></div>
+      </header>
+      <main class="dash-wrap">
+        <nav class="dash-tabs" role="tablist">
+          <button class="dash-tab" data-tab="daily" role="tab">Daily report</button>
+          <button class="dash-tab" data-tab="usage" role="tab">Usage &amp; engagement</button>
+          <button class="dash-tab" data-tab="roster" role="tab">Roster</button>
+        </nav>
+        <div id="dash-body"></div>
+      </main>`;
+    document.getElementById('logout').onclick = () => {
+      iapi('/api/logout', { method: 'POST' }).catch(() => {});
+      store.del(INSTRUCTOR_KEY);
+      go('landing');
+    };
+    document.querySelectorAll('[data-tab]').forEach(b => b.onclick = () => showTab(b.dataset.tab));
+    // First visit with an empty roster lands on the Roster tab so setup is obvious.
+    iapi('/api/roster').then(d => showTab(d.rows.length ? 'daily' : 'roster')).catch(() => showTab('daily'));
+  }
+
+  function showTab(tab) {
+    document.querySelectorAll('[data-tab]').forEach(b => {
+      b.classList.toggle('active', b.dataset.tab === tab);
+      b.setAttribute('aria-selected', b.dataset.tab === tab);
+    });
+    if (tab === 'daily') renderDaily();
+    if (tab === 'usage') loadUsage();
+    if (tab === 'roster') renderRoster();
+  }
+
+  function renderDaily() {
     const body = document.getElementById('dash-body');
+    body.innerHTML = `
+      <div class="dash-controls">
+        <label for="date-pick" class="dash-note">Viewing</label>
+        <input type="date" id="date-pick" value="${localToday()}" />
+        <span class="dash-note" id="refresh-note"></span>
+        <button class="link-btn" id="refresh-btn">refresh</button>
+      </div>
+      <div id="daily-body"><div class="empty-state">Loading class data…</div></div>`;
+    const pick = document.getElementById('date-pick');
+    pick.onchange = () => loadDaily(pick.value);
+    document.getElementById('refresh-btn').onclick = () => loadDaily(pick.value);
+    loadDaily(pick.value);
+  }
+
+  async function loadDaily(day) {
+    const body = document.getElementById('daily-body');
     const note = document.getElementById('refresh-note');
     body.innerHTML = `<div class="empty-state">Loading class data…</div>`;
-
-    let records = [];
-    try {
-      const res = await instructorFetch(`/api/dashboard?date=${day}`);
-      const data = await res.json();
-      records = data.records || [];
-    } catch (e) {
-      if (e.message !== 'Session expired') body.innerHTML = `<div class="empty-state">Couldn't reach the server. Check your connection and try refresh.</div>`;
-      return;
-    }
+    let records;
+    try { records = (await iapi(`/api/dashboard?date=${encodeURIComponent(day)}`)).records || []; }
+    catch (e) { if (e.status !== 401) body.innerHTML = `<div class="empty-state">Couldn't reach the server. Try refresh.</div>`; return; }
 
     note.textContent = `${records.length} student${records.length === 1 ? '' : 's'} active`;
     if (records.length === 0) {
-      body.innerHTML = `<div class="empty-state">No sessions recorded for this date yet.</div>`;
+      body.innerHTML = `<div class="empty-state">No sessions recorded for this date.<br>Students appear here once they've chatted with Ceteris.</div>`;
       return;
     }
-
-    const misconCounts = {};
-    records.forEach(r => (r.summary.misconceptions || []).forEach(m => { misconCounts[m] = (misconCounts[m] || 0) + 1; }));
-    const sortedMiscon = Object.entries(misconCounts).sort((a, b) => b[1] - a[1]).slice(0, 6);
-    const maxCount = sortedMiscon.length ? sortedMiscon[0][1] : 1;
+    const counts = {};
+    records.forEach(r => (r.summary.misconceptions || []).forEach(m => { counts[m] = (counts[m] || 0) + 1; }));
+    const top = Object.entries(counts).sort((a, b) => b[1] - a[1]).slice(0, 6);
+    const max = top.length ? top[0][1] : 1;
 
     body.innerHTML = `
-      ${sortedMiscon.length ? `
-      <div class="class-summary">
-        <h2>Class-wide watch areas</h2>
-        ${sortedMiscon.map(([m, c]) => `
-          <div class="struggle-bar-row">
-            <div class="struggle-bar-label">${escapeHtml(m)}</div>
-            <div class="struggle-bar-track"><div class="struggle-bar-fill" style="width:${(c / maxCount) * 100}%;"></div></div>
-            <div class="struggle-bar-count">${c}</div>
-          </div>`).join('')}
-      </div>` : ''}
+      ${top.length ? `<div class="box"><h2>Class-wide watch areas</h2>
+        ${top.map(([m, c]) => `<div class="struggle-bar-row"><div class="struggle-bar-label">${escapeHtml(m)}</div>
+          <div class="struggle-bar-track"><div class="struggle-bar-fill" style="width:${(c / max) * 100}%"></div></div>
+          <div class="struggle-bar-count">${c}</div></div>`).join('')}</div>` : ''}
       <div class="student-grid">
         ${records.map(r => {
-          const pillClass = r.summary.masteryLevel === 'struggling' ? 'mastery-struggling' : r.summary.masteryLevel === 'solid' ? 'mastery-solid' : 'mastery-developing';
-          return `
-          <div class="student-card" data-student-id="${r.studentId}">
-            <div class="sname">${escapeHtml(r.name)}</div>
-            <span class="mastery-pill ${pillClass}">${r.summary.masteryLevel || 'developing'}</span>
-            <div style="font-size:12px;color:var(--ink-soft);margin:8px 0 4px;">Topics</div>
-            <div>${(r.summary.topics || []).map(t => `<span class="topic-tag">${escapeHtml(t)}</span>`).join('') || '<span style="font-size:12px;color:var(--ink-soft);">—</span>'}</div>
-            ${(r.summary.misconceptions || []).length ? `<div style="font-size:12px;color:var(--ink-soft);margin-top:10px;">Flags</div>${r.summary.misconceptions.map(m => `<div class="miscon-item">${escapeHtml(m)}</div>`).join('')}` : ''}
-            ${r.summary.recommendedFollowUp ? `<div style="font-size:12px;font-style:italic;color:var(--ink-soft);margin-top:10px;border-top:1px solid var(--line);padding-top:8px;">${escapeHtml(r.summary.recommendedFollowUp)}</div>` : ''}
-            <button class="history-btn" data-history-for="${r.studentId}">view history over time →</button>
-            <div class="history-panel" id="history-${r.studentId}" style="display:none;"></div>
+          const s = r.summary;
+          const pill = s.masteryLevel === 'struggling' ? 'mastery-struggling' : s.masteryLevel === 'solid' ? 'mastery-solid' : 'mastery-developing';
+          return `<div class="student-card">
+            <div class="sname">${escapeHtml(displayName(r))}</div>
+            <div class="sid">${escapeHtml(r.studentId)}</div>
+            <span class="mastery-pill ${pill}">${escapeHtml(s.masteryLevel || 'developing')}</span>
+            <div class="small-label">Topics</div>
+            <div>${(s.topics || []).map(t => `<span class="topic-tag">${escapeHtml(t)}</span>`).join('') || '<span class="dash-note">—</span>'}</div>
+            ${(s.misconceptions || []).length ? `<div class="small-label">Flags</div>${s.misconceptions.map(m => `<div class="miscon-item">${escapeHtml(m)}</div>`).join('')}` : ''}
+            ${s.recommendedFollowUp ? `<div class="followup">${escapeHtml(s.recommendedFollowUp)}</div>` : ''}
+            <button class="history-btn" data-history="${escapeHtml(r.studentId)}">view history over time →</button>
+            <div class="history-panel" id="history-${escapeHtml(r.studentId)}" hidden></div>
           </div>`;
         }).join('')}
       </div>`;
-
-    body.querySelectorAll('[data-history-for]').forEach(btn => {
-      btn.onclick = () => toggleHistory(btn.dataset.historyFor);
-    });
+    body.querySelectorAll('[data-history]').forEach(b => b.onclick = () => toggleHistory(b.dataset.history));
   }
 
-  async function toggleHistory(studentId) {
-    const panel = document.getElementById(`history-${studentId}`);
-    if (panel.style.display === 'block') { panel.style.display = 'none'; return; }
-    panel.style.display = 'block';
-    panel.innerHTML = `<div style="font-size:11px;color:var(--ink-soft);">Loading history…</div>`;
+  async function toggleHistory(id) {
+    const panel = document.getElementById(`history-${id}`);
+    if (!panel.hidden) { panel.hidden = true; return; }
+    panel.hidden = false;
+    panel.innerHTML = `<div class="dash-note">Loading history…</div>`;
     try {
-      const res = await instructorFetch(`/api/student/${studentId}/history`);
-      const data = await res.json();
-      const days = data.days || [];
-      const usageLine = data.usage
-        ? `<div style="font-size:11px;color:var(--ink-soft);margin-bottom:8px;">${data.usage.messageCount} messages across ${data.usage.daysActive.length} day${data.usage.daysActive.length === 1 ? '' : 's'} · first used ${data.usage.firstSeen} · last used ${data.usage.lastSeen}</div>`
-        : '';
-      if (days.length === 0) {
-        panel.innerHTML = usageLine + `<div style="font-size:11px;color:var(--ink-soft);">No prior sessions recorded.</div>`;
-        return;
-      }
-      panel.innerHTML = usageLine + days.map(d => `
-        <div class="history-day">
-          <span class="hdate">${d.date}</span> — ${d.summary.masteryLevel || 'developing'} ·
-          ${(d.summary.topics || []).join(', ') || 'no topics logged'}
-        </div>`).join('');
+      const data = await iapi(`/api/student/${encodeURIComponent(id)}/history`);
+      const u = data.usage;
+      const usageLine = u ? `<div class="dash-note" style="margin-bottom:8px;">${u.messageCount} messages across ${u.daysActive.length} day${u.daysActive.length === 1 ? '' : 's'} · first ${escapeHtml(u.firstSeen)} · last ${escapeHtml(u.lastSeen)}</div>` : '';
+      panel.innerHTML = usageLine + (data.days.length ? data.days.map(d => `
+        <div class="history-day"><span class="hdate">${escapeHtml(d.date)}</span> — ${escapeHtml(d.summary.masteryLevel || 'developing')} · ${escapeHtml((d.summary.topics || []).join(', ') || 'no topics logged')}</div>`).join('')
+        : '<div class="dash-note">No earlier sessions.</div>');
     } catch (e) {
-      if (e.message !== 'Session expired') panel.innerHTML = `<div style="font-size:11px;color:var(--struggle);">Couldn't load history.</div>`;
+      if (e.status !== 401) panel.innerHTML = `<div class="dash-note">Couldn't load history.</div>`;
     }
   }
 
   async function loadUsage() {
     const body = document.getElementById('dash-body');
     body.innerHTML = `<div class="empty-state">Loading usage data…</div>`;
-    let rows = [];
-    try {
-      const res = await instructorFetch('/api/usage');
-      const data = await res.json();
-      rows = data.rows || [];
-    } catch (e) {
-      if (e.message !== 'Session expired') body.innerHTML = `<div class="empty-state">Couldn't reach the server.</div>`;
-      return;
-    }
-    if (rows.length === 0) {
-      body.innerHTML = `<div class="empty-state">No student activity recorded yet.</div>`;
-      return;
-    }
-    rows.sort((a, b) => b.messageCount - a.messageCount);
+    let rows;
+    try { rows = (await iapi('/api/usage')).rows || []; }
+    catch (e) { if (e.status !== 401) body.innerHTML = `<div class="empty-state">Couldn't reach the server.</div>`; return; }
+    if (!rows.length) { body.innerHTML = `<div class="empty-state">No students on the roster yet. Add them in the Roster tab.</div>`; return; }
+    rows.sort((a, b) => b.messageCount - a.messageCount || displayName(a).localeCompare(displayName(b)));
+    const never = rows.filter(r => r.messageCount === 0).length;
     body.innerHTML = `
-      <table class="usage-table">
-        <thead><tr><th>Student</th><th>Messages sent</th><th>Days active</th><th>First used</th><th>Last used</th></tr></thead>
-        <tbody>
-          ${rows.map(r => `
-            <tr>
-              <td>${escapeHtml(r.name)}</td>
-              <td>${r.messageCount}</td>
-              <td>${r.daysActive}</td>
-              <td>${r.firstSeen || '—'}</td>
-              <td>${r.lastSeen || '—'}</td>
-            </tr>`).join('')}
-        </tbody>
-      </table>`;
+      <p class="dash-note" style="margin:0 0 12px;">${rows.length} on the roster · ${rows.length - never} have used Ceteris · ${never} haven't yet</p>
+      <div class="table-scroll"><table class="data-table">
+        <thead><tr><th>Student</th><th>ID</th><th>Messages</th><th>Days active</th><th>First used</th><th>Last used</th></tr></thead>
+        <tbody>${rows.map(r => `<tr>
+          <td>${escapeHtml(displayName(r))}</td><td class="mono">${escapeHtml(r.studentId)}</td>
+          <td>${r.messageCount}</td><td>${r.daysActive}</td>
+          <td class="${r.firstSeen ? '' : 'muted'}">${escapeHtml(r.firstSeen || 'not yet')}</td>
+          <td class="${r.lastSeen ? '' : 'muted'}">${escapeHtml(r.lastSeen || '—')}</td></tr>`).join('')}
+        </tbody></table></div>`;
   }
 
-  render();
+  async function renderRoster() {
+    const body = document.getElementById('dash-body');
+    body.innerHTML = `
+      <div class="roster-grid">
+        <div class="box">
+          <h2>Add students</h2>
+          <p class="help">Paste one student per line: the 6-character ID, optionally followed by a comma and the student's name. Two columns copied from a spreadsheet work too. Adding an ID that's already listed just updates the name.</p>
+          <label for="roster-input" class="sr-only">Student IDs</label>
+          <textarea id="roster-input" class="roster-input" rows="9" placeholder="A1B2C3, Jordan Lee&#10;D4E5F6, Sam Ortiz&#10;G7H8J9"></textarea>
+          <div class="roster-actions"><button class="role-btn primary" id="roster-add">Add to roster</button></div>
+          <div class="roster-result" id="roster-result" role="status"></div>
+        </div>
+        <div id="roster-list"><div class="empty-state">Loading roster…</div></div>
+      </div>`;
+    document.getElementById('roster-add').onclick = addToRoster;
+    loadRosterList();
+  }
+
+  async function addToRoster() {
+    const input = document.getElementById('roster-input');
+    const result = document.getElementById('roster-result');
+    const btn = document.getElementById('roster-add');
+    if (!input.value.trim()) { result.textContent = 'Paste at least one student ID first.'; return; }
+    btn.disabled = true;
+    try {
+      const r = await iapi('/api/roster', { method: 'POST', body: { text: input.value } });
+      const parts = [];
+      if (r.added) parts.push(`Added ${r.added} student${r.added === 1 ? '' : 's'}.`);
+      if (r.updated) parts.push(`Updated ${r.updated} already on the roster.`);
+      if (!r.added && !r.updated) parts.push('No valid IDs found.');
+      result.innerHTML = escapeHtml(parts.join(' ')) + (r.invalid.length
+        ? `<div class="warn" style="margin-top:6px;">Skipped ${r.invalid.length} line${r.invalid.length === 1 ? '' : 's'} without a 6-character ID: ${r.invalid.slice(0, 5).map(l => `<span class="mono">${escapeHtml(l)}</span>`).join(', ')}${r.invalid.length > 5 ? '…' : ''}</div>` : '');
+      if (r.added || r.updated) input.value = '';
+      loadRosterList();
+    } catch (e) {
+      if (e.status !== 401) result.textContent = e.message;
+    }
+    btn.disabled = false;
+  }
+
+  async function loadRosterList() {
+    const list = document.getElementById('roster-list');
+    let rows;
+    try { rows = (await iapi('/api/roster')).rows || []; }
+    catch (e) { if (e.status !== 401) list.innerHTML = `<div class="empty-state">Couldn't load the roster.</div>`; return; }
+    if (!rows.length) {
+      list.innerHTML = `<div class="box"><h2>Roster</h2><p class="help" style="margin:0;">No students yet. Until you add IDs, nobody can log in as a student.</p></div>`;
+      return;
+    }
+    list.innerHTML = `
+      <h2 style="font-size:18px;margin:0 0 12px;">Roster <span class="dash-note">(${rows.length})</span></h2>
+      <div class="table-scroll"><table class="data-table">
+        <thead><tr><th>ID</th><th>Name</th><th>Last active</th><th><span class="sr-only">Actions</span></th></tr></thead>
+        <tbody>${rows.map(r => `<tr>
+          <td class="mono">${escapeHtml(r.studentId)}</td>
+          <td class="${r.name ? '' : 'muted'}">${escapeHtml(r.name || 'no name')}</td>
+          <td class="${r.lastSeen ? '' : 'muted'}">${escapeHtml(r.lastSeen || 'never')}</td>
+          <td style="text-align:right;"><button class="remove-btn" data-remove="${escapeHtml(r.studentId)}">Remove</button></td></tr>`).join('')}
+        </tbody></table></div>
+      <p class="dash-note" style="margin-top:10px;">Removing a student ends their access right away. Their past sessions stay in your reports.</p>`;
+    list.querySelectorAll('[data-remove]').forEach(b => {
+      let timer;
+      b.onclick = async () => {
+        if (!b.classList.contains('confirm')) {
+          b.classList.add('confirm'); b.textContent = 'Confirm remove';
+          timer = setTimeout(() => { b.classList.remove('confirm'); b.textContent = 'Remove'; }, 4000);
+          return;
+        }
+        clearTimeout(timer);
+        b.disabled = true;
+        try { await iapi(`/api/roster/${encodeURIComponent(b.dataset.remove)}`, { method: 'DELETE' }); loadRosterList(); }
+        catch (e) { b.disabled = false; }
+      };
+    });
+  }
+
+  // ---------- Start ----------
+  (async function start() {
+    const token = store.get(STUDENT_KEY);
+    if (token) {
+      try {
+        state.student = await api('/api/me', { token });
+        state.view = 'student-chat';
+      } catch (e) {
+        if (e.status === 401) store.del(STUDENT_KEY);
+      }
+    }
+    render();
+  })();
 })();
 </script>
 </body>
