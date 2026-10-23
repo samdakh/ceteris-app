@@ -72,15 +72,27 @@ Students stay logged in on their device until they click **Log out**, so remind 
 - **Student chat**: Socratic tutoring tuned for principles-level micro/macro. Replies render as formatted text (bold, lists, small tables), and starter questions help first-time students begin.
 - **Student side panel**: topics explored, what the student worked through today, and two suggested next questions they can click. It never shows mastery labels or flagged mistakes; those appear only on your dashboard.
 - **Instructor password gate**: a single shared password (`INSTRUCTOR_PASSWORD`). Logins now survive server restarts and last 14 days.
-- **Daily report tab**: today's (or any past date's) per-student summary, plus a class-wide "watch areas" chart of the most common misconceptions.
-- **Progress over time**: each student card has a "view history over time" link showing every day they've used the tool.
+- **Conversations tab**: a discussion-board list of every conversation (one per student per day), newest activity first. Filter by period (today, 7 days, 30 days, all) or by student name/ID. Each row shows the student's opening question, how many questions they asked, Ceteris's read (mastery and flags), and whether you've replied. A "watch areas" chart above the list shows the most common misconceptions in the conversations listed.
+- **Reading a conversation**: click a row to see the full exchange between the student and Ceteris, with Ceteris's read in the sidebar and a link to all of that student's conversations. This only works for students who have chosen to share (see below).
+- **Chiming in**: at the bottom of any conversation, write a note (Markdown works; Cmd/Ctrl + Enter posts it). The student sees it in their chat, or, for an earlier day's conversation, in a "From your instructor" box with a banner the next time they open Ceteris. Ceteris also reads your note and treats it as course guidance, so it can build on it if the student follows up. Each note shows whether the student has seen it, and you can delete a note.
 - **Usage & engagement tab**: messages, days active, and first/last use for everyone on the roster, including students who haven't tried it yet.
 - **Roster tab**: add and remove student IDs.
+- **Dark mode**: a moon/sun switch in every header. It starts out matching the device's own light/dark setting and remembers each person's choice on that device. The dark theme uses the official blue as its main surface with gold accents; its darker blues are shades of the official blue (mixed with black).
+
+## Student privacy: summaries by default
+Each student decides what you see, with a switch in their chat's side panel: **Share full conversations with [you]**. It is **off by default**.
+- **Off (default):** you see Ceteris's summary of each conversation (topics, mastery read, flagged misconceptions, follow-up suggestion), but none of the student's own words. Their threads are titled by topic and marked "Summary only". The summarizer is instructed to paraphrase, never quote.
+- **On:** you can read their full conversations, including earlier ones. Students can switch it off again at any time, which hides them again.
+- **Either way** you can post notes, and the Usage tab shows each student's choice.
+
+The switch controls what the app shows you. Full conversations are still stored in your Supabase database (Ceteris needs them to carry on a conversation), so anyone with access to that database could read them. Keep the Supabase login to yourself.
 
 ## Settings
-- `CLASS_TIMEZONE` (optional, default `America/New_York`): decides when "today" starts and ends for daily reports. Any IANA zone name works, e.g. `America/Chicago`.
+- `CLASS_TIMEZONE` (optional, default `America/New_York`): decides when "today" starts and ends, which is when a student's conversation rolls over to a new one. Any IANA zone name works, e.g. `America/Chicago`.
+- `INSTRUCTOR_NAME` (optional, default "Your instructor"): how your notes are signed for students, e.g. `Prof. Dakhlia`.
 
 ## Before rolling out to a full class
+- **Tell students about the sharing switch.** It's off by default and explained in the chat's side panel, but a word in class or on the syllabus helps students make an informed choice, especially if you'd like them to opt in.
 - Logging in needs only a student ID, so anyone who knows a classmate's ID could log in as them. Repeated failed logins from one network are slowed down, but treat IDs as semi-private and don't base grades on the dashboard alone.
 - Misconception detection depends on the model's read of the conversation — treat the dashboard as a helpful signal, not a grade.
 

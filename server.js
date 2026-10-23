@@ -58,8 +58,31 @@ async function initDB() {
       first_seen TEXT,
       last_seen TEXT
     );
+    ALTER TABLE transcripts ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ;
+    -- Each student decides whether the instructor may read full conversations. Off by default.
+    ALTER TABLE roster ADD COLUMN IF NOT EXISTS share_transcripts BOOLEAN NOT NULL DEFAULT false;
   `);
   await pool.query('DELETE FROM auth_sessions WHERE expires_at < now()');
+}
+
+// Name shown to students on notes the instructor posts, e.g. "Prof. Dakhlia".
+const INSTRUCTOR_NAME = (process.env.INSTRUCTOR_NAME || '').trim() || 'Your instructor';
+const DAY_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
+
+function newId() {
+  return crypto.randomBytes(6).toString('hex');
+}
+
+// YYYY-MM-DD for `days` days before the given YYYY-MM-DD.
+function daysBefore(day, days) {
+  const d = new Date(day + 'T12:00:00Z');
+  d.setUTCDate(d.getUTCDate() - days);
+  return d.toISOString().slice(0, 10);
+}
+
+function firstQuestion(transcript) {
+  const first = transcript.find(m => m.role === 'user');
+  return first ? first.content : '';
 }
 
 // "Today" in the class's time zone, so an 9pm session in New York counts as today,
@@ -103,13 +126,13 @@ async function requireStudent(req, res, next) {
   try {
     // Joining the roster means a student removed from the roster loses access right away.
     const result = await pool.query(
-      `SELECT r.student_id, r.name FROM auth_sessions s
+      `SELECT r.student_id, r.name, r.share_transcripts FROM auth_sessions s
        JOIN roster r ON r.student_id = s.student_id
        WHERE s.token_hash = $1 AND s.role = 'student' AND s.expires_at > now()`,
       [hashToken(token)]
     );
     if (!result.rows[0]) return res.status(401).json({ error: 'Your session has ended. Please log in again.' });
-    req.student = { id: result.rows[0].student_id, name: result.rows[0].name };
+    req.student = { id: result.rows[0].student_id, name: result.rows[0].name, shareTranscripts: result.rows[0].share_transcripts };
     next();
   } catch (e) {
     console.error('Ceteris: student auth failed —', e.message);
@@ -162,6 +185,7 @@ Your approach:
 - Keep explanations concrete: use simple numeric examples or everyday scenarios (coffee shops, part-time jobs, a national economy) rather than abstract jargon.
 - Keep responses focused — a few short paragraphs at most, not a lecture.
 - Be encouraging without being saccharine.
+- The course instructor can read these conversations and sometimes adds a note, marked as a note from the instructor. Treat instructor notes as authoritative guidance for this course: build on them, never contradict them, and refer to them naturally when relevant (e.g. "As your instructor pointed out…").
 
 Formatting (your replies are rendered as Markdown):
 - Use **bold** for a key term the first time it appears, and *italics* sparingly for emphasis.
@@ -172,6 +196,8 @@ Formatting (your replies are rendered as Markdown):
 
 const SUMMARY_SYSTEM_PROMPT = `You analyze a tutoring transcript between an economics student and a tutor. Output ONLY valid JSON, no markdown fences, no preamble, matching exactly this shape:
 {"topics": string[], "misconceptions": string[], "masteryLevel": "struggling" | "developing" | "solid", "recommendedFollowUp": string, "takeaways": string[], "suggestedQuestions": string[]}
+Lines starting "Instructor:" are notes the course instructor added; treat them as context, not as the student's own work.
+Many students share only this summary with the instructor, not the conversation, so paraphrase everything: never quote the student's own words, and leave out personal details unrelated to economics.
 
 Fields for the INSTRUCTOR only (the student never sees these):
 - "topics": specific econ concepts discussed, short lowercase noun phrases (e.g. "price elasticity of demand", "opportunity cost").
@@ -237,6 +263,82 @@ async function studentStats(studentId, transcript) {
   };
 }
 
+// Turns a stored conversation into Claude API messages. Instructor notes become clearly
+// labeled text inside the user turn, and consecutive same-role turns are merged.
+function toApiMessages(transcript) {
+  const out = [];
+  for (const m of transcript) {
+    let role, content;
+    if (m.role === 'assistant') { role = 'assistant'; content = m.content; }
+    else if (m.role === 'instructor') { role = 'user'; content = `[Note from the instructor, posted in this conversation and visible to the student]\n${m.content}`; }
+    else if (m.role === 'user') { role = 'user'; content = m.content; }
+    else continue;
+    const last = out[out.length - 1];
+    if (last && last.role === role) {
+      if (m.role === 'user' && last.hasNote) content = `[Student]\n${content}`;
+      last.content += '\n\n' + content;
+      last.hasNote = last.hasNote || m.role === 'instructor';
+    } else {
+      out.push({ role, content, hasNote: m.role === 'instructor' });
+    }
+  }
+  return out.map(({ role, content }) => ({ role, content }));
+}
+
+function transcriptAsText(transcript) {
+  const label = { user: 'Student', assistant: 'Tutor', instructor: 'Instructor' };
+  return transcript.filter(m => label[m.role]).map(m => `${label[m.role]}: ${m.content}`).join('\n');
+}
+
+// Notes the instructor left on this student's other recent conversations, so Ceteris
+// can follow up on them today.
+async function recentNotesContext(studentId, today) {
+  const r = await pool.query(
+    `SELECT day, transcript FROM transcripts
+     WHERE student_id=$1 AND day <> $2 AND day >= $3 AND transcript @> '[{"role":"instructor"}]'
+     ORDER BY day`,
+    [studentId, today, daysBefore(today, 14)]
+  );
+  const lines = [];
+  r.rows.forEach(row => row.transcript.filter(m => m.role === 'instructor')
+    .forEach(m => lines.push(`- On ${row.day}, about "${firstQuestion(row.transcript).slice(0, 120)}": ${m.content}`)));
+  return lines.length
+    ? `\n\nNotes the instructor left on this student's recent earlier conversations (context; the student has been shown these):\n${lines.join('\n')}`
+    : '';
+}
+
+// Instructor notes from earlier days (the last 30), shown in the student's side panel.
+async function earlierNotes(studentId, today) {
+  const r = await pool.query(
+    `SELECT day, transcript FROM transcripts
+     WHERE student_id=$1 AND day < $2 AND day >= $3 AND transcript @> '[{"role":"instructor"}]'
+     ORDER BY day DESC`,
+    [studentId, today, daysBefore(today, 30)]
+  );
+  const notes = [];
+  r.rows.forEach(row => {
+    const question = firstQuestion(row.transcript);
+    row.transcript.filter(m => m.role === 'instructor').reverse().forEach(m =>
+      notes.push({ id: m.id, day: row.day, content: m.content, at: m.at || null, isNew: m.seen === false, question }));
+  });
+  return notes;
+}
+
+async function markNotesSeen(studentId) {
+  await pool.query(
+    `UPDATE transcripts SET transcript = (
+       SELECT jsonb_agg(CASE WHEN m->>'role' = 'instructor' THEN m || '{"seen": true}'::jsonb ELSE m END ORDER BY ord)
+       FROM jsonb_array_elements(transcripts.transcript) WITH ORDINALITY AS t(m, ord))
+     WHERE student_id = $1 AND transcript @> '[{"role":"instructor","seen":false}]'`,
+    [studentId]
+  );
+}
+
+// What a student's browser receives for a stored message: no internal bookkeeping fields.
+function forStudent(m) {
+  return { role: m.role, content: m.content };
+}
+
 async function loadToday(studentId) {
   const day = todayKey();
   const t = await pool.query('SELECT transcript FROM transcripts WHERE student_id=$1 AND day=$2', [studentId, day]);
@@ -271,7 +373,21 @@ app.post('/api/student-login', async (req, res) => {
 });
 
 app.get('/api/me', requireStudent, (req, res) => {
-  res.json({ studentId: req.student.id, name: req.student.name });
+  res.json({ studentId: req.student.id, name: req.student.name, shareTranscripts: req.student.shareTranscripts });
+});
+
+// The student's choice: share full conversations with the instructor, or only summaries.
+// It applies to all of their conversations, past and future, and can be changed any time.
+app.post('/api/settings', requireStudent, async (req, res) => {
+  const share = req.body && req.body.shareTranscripts;
+  if (typeof share !== 'boolean') return res.status(400).json({ error: 'shareTranscripts must be true or false.' });
+  try {
+    await pool.query('UPDATE roster SET share_transcripts=$2 WHERE student_id=$1', [req.student.id, share]);
+    res.json({ shareTranscripts: share });
+  } catch (e) {
+    console.error('Ceteris: settings update failed —', e.message);
+    res.status(500).json({ error: 'Could not save your setting.' });
+  }
 });
 
 app.post('/api/logout', async (req, res) => {
@@ -282,15 +398,20 @@ app.post('/api/logout', async (req, res) => {
   res.json({ ok: true });
 });
 
-// Today's conversation plus the student-facing side panel.
+// Today's conversation, the student-facing side panel, and recent notes from the instructor.
+// Loading it counts as the student having seen any instructor notes.
 app.get('/api/session', requireStudent, async (req, res) => {
   try {
-    const { transcript, summary } = await loadToday(req.student.id);
+    const { day, transcript, summary } = await loadToday(req.student.id);
     res.json({
-      transcript,
+      transcript: transcript.map(forStudent),
       panel: studentPanel(summary),
-      stats: await studentStats(req.student.id, transcript)
+      stats: await studentStats(req.student.id, transcript),
+      notes: await earlierNotes(req.student.id, day),
+      instructorName: INSTRUCTOR_NAME,
+      shareTranscripts: req.student.shareTranscripts
     });
+    markNotesSeen(req.student.id).catch(e => console.error('Ceteris: mark seen failed —', e.message));
   } catch (e) {
     console.error('Ceteris: session fetch failed —', e.message);
     res.status(500).json({ error: 'Could not load your session.' });
@@ -307,15 +428,19 @@ app.post('/api/tutor', requireStudent, async (req, res) => {
 
   try {
     const { day, transcript } = await loadToday(studentId);
-    transcript.push({ role: 'user', content: message });
+    const question = { id: newId(), role: 'user', content: message, at: new Date().toISOString() };
 
-    const reply = await callAnthropic(TUTOR_SYSTEM_PROMPT, transcript.map(m => ({ role: m.role, content: m.content })), 1200);
-    transcript.push({ role: 'assistant', content: reply });
+    const system = TUTOR_SYSTEM_PROMPT + await recentNotesContext(studentId, day);
+    const reply = await callAnthropic(system, toApiMessages([...transcript, question]), 1200);
+    const answer = { id: newId(), role: 'assistant', content: reply, at: new Date().toISOString() };
 
+    // Append rather than overwrite, so a note the instructor posts while Claude is
+    // still answering isn't lost.
     await pool.query(
-      `INSERT INTO transcripts (student_id, day, transcript) VALUES ($1, $2, $3)
-       ON CONFLICT (student_id, day) DO UPDATE SET transcript = EXCLUDED.transcript`,
-      [studentId, day, JSON.stringify(transcript)]
+      `INSERT INTO transcripts (student_id, day, transcript, updated_at) VALUES ($1, $2, $3, now())
+       ON CONFLICT (student_id, day) DO UPDATE
+         SET transcript = transcripts.transcript || EXCLUDED.transcript, updated_at = now()`,
+      [studentId, day, JSON.stringify([question, answer])]
     );
 
     const usageRow = await pool.query('SELECT * FROM usage_stats WHERE student_id=$1', [studentId]);
@@ -348,8 +473,7 @@ app.post('/api/session/summarize', requireStudent, async (req, res) => {
 
     let summary = previous;
     try {
-      const transcriptText = transcript.map(m => `${m.role === 'user' ? 'Student' : 'Tutor'}: ${m.content}`).join('\n');
-      summary = parseSummary(await callAnthropic(SUMMARY_SYSTEM_PROMPT, [{ role: 'user', content: transcriptText }], 800));
+      summary = parseSummary(await callAnthropic(SUMMARY_SYSTEM_PROMPT, [{ role: 'user', content: transcriptAsText(transcript) }], 800));
       await pool.query(
         `INSERT INTO summaries (student_id, day, summary) VALUES ($1, $2, $3)
          ON CONFLICT (student_id, day) DO UPDATE SET summary = EXCLUDED.summary`,
@@ -449,37 +573,17 @@ app.delete('/api/roster/:studentId', requireInstructor, async (req, res) => {
   }
 });
 
-app.get('/api/student/:studentId/history', requireInstructor, async (req, res) => {
-  const studentId = normalizeId(req.params.studentId);
-  try {
-    const studentRow = await pool.query('SELECT * FROM roster WHERE student_id=$1', [studentId]);
-    if (!studentRow.rows[0]) return res.status(404).json({ error: 'Student not found' });
-
-    const summaryRows = await pool.query('SELECT day, summary FROM summaries WHERE student_id=$1 ORDER BY day ASC', [studentId]);
-    const days = summaryRows.rows.map(r => ({ date: r.day, summary: r.summary }));
-
-    const usageRow = await pool.query('SELECT * FROM usage_stats WHERE student_id=$1', [studentId]);
-    const usage = usageRow.rows[0]
-      ? { messageCount: usageRow.rows[0].message_count, daysActive: usageRow.rows[0].days_active, firstSeen: usageRow.rows[0].first_seen, lastSeen: usageRow.rows[0].last_seen }
-      : null;
-
-    res.json({ studentId, name: studentRow.rows[0].name, days, usage });
-  } catch (e) {
-    console.error('Ceteris: history fetch failed —', e.message);
-    res.status(500).json({ error: 'Could not load history' });
-  }
-});
-
 // Every roster student, including those who have never used the tool.
 app.get('/api/usage', requireInstructor, async (req, res) => {
   try {
     const result = await pool.query(`
-      SELECT r.student_id, r.name, u.message_count, u.days_active, u.first_seen, u.last_seen
+      SELECT r.student_id, r.name, r.share_transcripts, u.message_count, u.days_active, u.first_seen, u.last_seen
       FROM roster r LEFT JOIN usage_stats u ON r.student_id = u.student_id
     `);
     const rows = result.rows.map(r => ({
       studentId: r.student_id,
       name: r.name,
+      shareTranscripts: r.share_transcripts,
       messageCount: r.message_count || 0,
       daysActive: r.days_active ? r.days_active.length : 0,
       firstSeen: r.first_seen,
@@ -492,30 +596,141 @@ app.get('/api/usage', requireInstructor, async (req, res) => {
   }
 });
 
-app.get('/api/dashboard', requireInstructor, async (req, res) => {
-  const day = req.query.date || todayKey();
+// --- Conversations (discussion-board view) -------------------------------------
+// A "thread" is one student's conversation on one day.
+
+const PENDING_SUMMARY = {
+  topics: [], misconceptions: [], masteryLevel: null,
+  recommendedFollowUp: 'Analysis still pending. It updates after the student\'s next reply.', pending: true
+};
+
+// Thread list, newest activity first. ?range=7|30|all (days), optional ?student=ID.
+app.get('/api/threads', requireInstructor, async (req, res) => {
+  const range = String(req.query.range || '7');
+  const cutoff = range === 'all' ? null : daysBefore(todayKey(), Math.max(0, (parseInt(range, 10) || 7) - 1));
+  const student = req.query.student ? normalizeId(req.query.student) : null;
   try {
     const result = await pool.query(`
-      SELECT r.student_id, r.name, s.summary,
-             COALESCE(jsonb_array_length(t.transcript), 0) AS message_count
-      FROM roster r
-      LEFT JOIN summaries s ON s.student_id = r.student_id AND s.day = $1
-      LEFT JOIN transcripts t ON t.student_id = r.student_id AND t.day = $1
-      WHERE s.summary IS NOT NULL OR COALESCE(jsonb_array_length(t.transcript), 0) > 0
-      ORDER BY r.name NULLS LAST, r.student_id
-    `, [day]);
-    const records = result.rows.map(r => ({
-      studentId: r.student_id,
-      name: r.name,
-      summary: r.summary || {
-        topics: [], misconceptions: [], masteryLevel: 'developing',
-        recommendedFollowUp: 'Session logged, analysis still pending — refresh in a moment.', pending: true
-      }
-    }));
-    res.json({ date: day, records });
+      SELECT t.student_id, r.name, COALESCE(r.share_transcripts, false) AS shared, t.day, t.updated_at, t.transcript, s.summary
+      FROM transcripts t
+      LEFT JOIN roster r ON r.student_id = t.student_id
+      LEFT JOIN summaries s ON s.student_id = t.student_id AND s.day = t.day
+      WHERE t.student_id ~ '^[A-Z0-9]{6}$'
+        AND jsonb_array_length(t.transcript) > 0
+        AND ($1::text IS NULL OR t.day >= $1)
+        AND ($2::text IS NULL OR t.student_id = $2)
+      ORDER BY COALESCE(t.updated_at, t.day::date::timestamptz) DESC
+      LIMIT 300
+    `, [cutoff, student]);
+    const threads = result.rows.map(r => {
+      const t = r.transcript;
+      const notes = t.filter(m => m.role === 'instructor');
+      return {
+        studentId: r.student_id,
+        name: r.name,
+        day: r.day,
+        updatedAt: r.updated_at,
+        shared: r.shared,
+        // The opening question is the student's own words, so it's only shown if they share.
+        title: r.shared ? firstQuestion(t) : null,
+        studentMessages: t.filter(m => m.role === 'user').length,
+        tutorMessages: t.filter(m => m.role === 'assistant').length,
+        instructorNotes: notes.length,
+        unseenNotes: notes.filter(m => m.seen === false).length,
+        lastFromStudent: t.length > 0 && t[t.length - 1].role !== 'instructor',
+        summary: r.summary || PENDING_SUMMARY
+      };
+    });
+    res.json({ threads });
   } catch (e) {
-    console.error('Ceteris: dashboard fetch failed —', e.message);
-    res.status(500).json({ error: 'Could not load dashboard' });
+    console.error('Ceteris: thread list failed —', e.message);
+    res.status(500).json({ error: 'Could not load conversations.' });
+  }
+});
+
+async function loadThread(studentId, day) {
+  const r = await pool.query(`
+    SELECT t.transcript, t.updated_at, r.name, COALESCE(r.share_transcripts, false) AS shared, s.summary
+    FROM transcripts t
+    LEFT JOIN roster r ON r.student_id = t.student_id
+    LEFT JOIN summaries s ON s.student_id = t.student_id AND s.day = t.day
+    WHERE t.student_id = $1 AND t.day = $2
+  `, [studentId, day]);
+  if (!r.rows[0]) return null;
+  const row = r.rows[0];
+  return {
+    studentId, day, name: row.name, updatedAt: row.updated_at,
+    shared: row.shared,
+    // Without the student's consent, the instructor gets the summary and their own notes only.
+    transcript: row.shared ? row.transcript : row.transcript.filter(m => m.role === 'instructor'),
+    questionCount: row.transcript.filter(m => m.role === 'user').length,
+    summary: row.summary || PENDING_SUMMARY
+  };
+}
+
+function threadParams(req, res) {
+  const studentId = normalizeId(req.params.studentId);
+  const day = String(req.params.day || '');
+  if (!STUDENT_ID_PATTERN.test(studentId) || !DAY_PATTERN.test(day)) {
+    res.status(400).json({ error: 'Invalid conversation reference.' });
+    return null;
+  }
+  return { studentId, day };
+}
+
+app.get('/api/threads/:studentId/:day', requireInstructor, async (req, res) => {
+  const p = threadParams(req, res);
+  if (!p) return;
+  try {
+    const thread = await loadThread(p.studentId, p.day);
+    if (!thread) return res.status(404).json({ error: 'Conversation not found.' });
+    res.json(thread);
+  } catch (e) {
+    console.error('Ceteris: thread fetch failed —', e.message);
+    res.status(500).json({ error: 'Could not load the conversation.' });
+  }
+});
+
+// The instructor chimes in. The note is appended to the conversation; the student sees it
+// next time they open Ceteris, and Ceteris reads it as course guidance.
+app.post('/api/threads/:studentId/:day/notes', requireInstructor, async (req, res) => {
+  const p = threadParams(req, res);
+  if (!p) return;
+  const text = String((req.body && req.body.text) || '').trim();
+  if (!text) return res.status(400).json({ error: 'Write a note first.' });
+  if (text.length > 4000) return res.status(400).json({ error: 'That note is too long (4,000 characters max).' });
+  const note = { id: newId(), role: 'instructor', content: text, at: new Date().toISOString(), seen: false, author: INSTRUCTOR_NAME };
+  try {
+    const r = await pool.query(
+      `UPDATE transcripts SET transcript = transcript || $3::jsonb, updated_at = now()
+       WHERE student_id = $1 AND day = $2 RETURNING student_id`,
+      [p.studentId, p.day, JSON.stringify([note])]
+    );
+    if (!r.rows[0]) return res.status(404).json({ error: 'Conversation not found.' });
+    res.json(await loadThread(p.studentId, p.day));
+  } catch (e) {
+    console.error('Ceteris: posting note failed —', e.message);
+    res.status(500).json({ error: 'Could not post the note.' });
+  }
+});
+
+app.delete('/api/threads/:studentId/:day/notes/:noteId', requireInstructor, async (req, res) => {
+  const p = threadParams(req, res);
+  if (!p) return;
+  try {
+    await pool.query(
+      `UPDATE transcripts SET transcript = COALESCE((
+         SELECT jsonb_agg(m ORDER BY ord) FROM jsonb_array_elements(transcripts.transcript) WITH ORDINALITY AS t(m, ord)
+         WHERE NOT (m->>'role' = 'instructor' AND m->>'id' = $3)), '[]'::jsonb)
+       WHERE student_id = $1 AND day = $2`,
+      [p.studentId, p.day, String(req.params.noteId)]
+    );
+    const thread = await loadThread(p.studentId, p.day);
+    if (!thread) return res.status(404).json({ error: 'Conversation not found.' });
+    res.json(thread);
+  } catch (e) {
+    console.error('Ceteris: deleting note failed —', e.message);
+    res.status(500).json({ error: 'Could not delete the note.' });
   }
 });
 

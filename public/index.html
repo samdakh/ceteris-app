@@ -3,6 +3,14 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<script>
+  (function () {
+    var t = null;
+    try { t = localStorage.getItem('ceterisTheme'); } catch (e) {}
+    if (t !== 'dark' && t !== 'light') t = window.matchMedia && matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+    document.documentElement.setAttribute('data-theme', t);
+  })();
+</script>
 <title>Ceteris</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -23,6 +31,9 @@
     --ink: var(--blue); --ink-soft: var(--blue-75);
     --page: var(--gray-12); --card: #FFFFFF; --line: var(--gray-40);
     --error: #A24B3E; --error-soft: #F4E1DC;
+    --solid: var(--blue); --surface-2: var(--gray-12); --surface-3: var(--gray-25);
+    --accent-bg: var(--gold-20); --accent-strong: var(--gold-35); --focus: var(--blue);
+    --bubble: var(--blue); --bubble-ink: #FFFFFF; --send-bg: var(--blue); --send-ink: var(--gold);
     --font-display: 'Lora', Georgia, serif;
     --font-body: 'IBM Plex Sans', -apple-system, 'Segoe UI', sans-serif;
     --font-mono: 'IBM Plex Mono', ui-monospace, monospace;
@@ -32,20 +43,20 @@
   body { font-family: var(--font-body); font-size: 15px; color: var(--ink); background: var(--page); line-height: 1.5; }
   h1, h2, h3 { font-family: var(--font-display); font-weight: 600; margin: 0; }
   button { font-family: inherit; }
-  :focus-visible { outline: 2px solid var(--blue); outline-offset: 2px; box-shadow: 0 0 0 5px var(--gold-35); }
+  :focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; box-shadow: 0 0 0 5px var(--accent-strong); }
   .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
   .mono { font-family: var(--font-mono); }
 
   /* ---------- Shared chrome ---------- */
-  .topbar { position: sticky; top: 0; z-index: 5; height: 60px; display: flex; align-items: center; justify-content: space-between; padding: 0 24px; background: var(--blue); color: #fff; border-bottom: 4px solid var(--gold); }
+  .topbar { position: sticky; top: 0; z-index: 5; height: 60px; display: flex; align-items: center; justify-content: space-between; padding: 0 24px; background: var(--solid); color: #fff; border-bottom: 4px solid var(--gold); }
   .brand { font-family: var(--font-display); font-style: italic; font-weight: 500; font-size: 22px; color: #fff; }
   .topbar-right { display: flex; align-items: center; gap: 16px; font-size: 13px; color: var(--gray-25); }
   .who .mono { font-size: 12px; margin-left: 8px; color: var(--gray); }
-  .link-btn { background: none; border: none; font-family: var(--font-mono); font-size: 12px; color: var(--blue); text-decoration: underline; text-decoration-color: var(--gold); text-underline-offset: 3px; cursor: pointer; padding: 4px 0; }
+  .link-btn { background: none; border: none; font-family: var(--font-mono); font-size: 12px; color: var(--ink); text-decoration: underline; text-decoration-color: var(--gold); text-underline-offset: 3px; cursor: pointer; padding: 4px 0; }
   .topbar .link-btn { color: var(--gold); text-decoration-color: var(--gold); }
-  .role-btn { font-size: 15px; font-weight: 600; padding: 13px 26px; border-radius: 8px; border: 2px solid var(--blue); background: #fff; color: var(--blue); cursor: pointer; transition: background .15s, color .15s, border-color .15s; }
-  .role-btn:hover { background: var(--blue); color: #fff; }
-  .role-btn.primary { background: var(--blue); color: #fff; border-color: var(--blue); }
+  .role-btn { font-size: 15px; font-weight: 600; padding: 13px 26px; border-radius: 8px; border: 2px solid var(--ink); background: #fff; color: var(--ink); cursor: pointer; transition: background .15s, color .15s, border-color .15s; }
+  .role-btn:hover { background: var(--solid); color: #fff; }
+  .role-btn.primary { background: var(--solid); color: #fff; border-color: var(--solid); }
   .role-btn.primary:hover { background: var(--gold); color: var(--blue); border-color: var(--gold); }
   .role-btn.gold { background: var(--gold); color: var(--blue); border-color: var(--gold); }
   .role-btn.gold:hover { background: #fff; border-color: #fff; }
@@ -66,12 +77,12 @@
   /* ---------- Login gates ---------- */
   .gate { padding: 72px 16px; }
   .gate-card { max-width: 400px; margin: 0 auto; background: var(--card); border: 1px solid var(--line); border-top: 6px solid var(--gold); border-radius: 12px; padding: 32px 28px; text-align: center; box-shadow: 0 8px 24px rgba(17, 46, 81, .08); }
-  .gate-card h1 { font-size: 24px; color: var(--blue); }
+  .gate-card h1 { font-size: 24px; color: var(--ink); }
   .gate-card p { color: var(--ink-soft); font-size: 14px; margin: 8px 0 0; }
-  .id-input { width: 100%; margin: 22px 0 14px; padding: 12px; font-family: var(--font-mono); font-size: 26px; letter-spacing: .35em; text-align: center; text-transform: uppercase; border: 2px solid var(--line); border-radius: 8px; background: var(--card); color: var(--blue); }
-  .id-input::placeholder { color: var(--gray-40); letter-spacing: .35em; }
-  .pw-input { width: 100%; margin: 22px 0 14px; padding: 12px 14px; font-size: 15px; border: 2px solid var(--line); border-radius: 8px; background: var(--card); color: var(--blue); }
-  .id-input:focus, .pw-input:focus { outline: none; border-color: var(--blue); box-shadow: 0 0 0 4px var(--gold-35); }
+  .id-input { width: 100%; margin: 22px 0 14px; padding: 12px; font-family: var(--font-mono); font-size: 26px; letter-spacing: .35em; text-align: center; text-transform: uppercase; border: 2px solid var(--line); border-radius: 8px; background: var(--card); color: var(--ink); }
+  .id-input::placeholder { color: var(--line); letter-spacing: .35em; }
+  .pw-input { width: 100%; margin: 22px 0 14px; padding: 12px 14px; font-size: 15px; border: 2px solid var(--line); border-radius: 8px; background: var(--card); color: var(--ink); }
+  .id-input:focus, .pw-input:focus { outline: none; border-color: var(--focus); box-shadow: 0 0 0 4px var(--accent-strong); }
   .form-error { color: var(--error); background: var(--error-soft); font-size: 13.5px; border-radius: 6px; padding: 8px 12px; margin: -2px 0 14px; text-align: left; }
   .fine { font-size: 12.5px !important; margin-top: 18px !important; }
 
@@ -90,43 +101,43 @@
 
   /* Welcome state */
   .welcome { max-width: 560px; margin: 7vh auto 0; text-align: center; }
-  .welcome h2 { font-size: 30px; font-weight: 500; color: var(--blue); }
+  .welcome h2 { font-size: 30px; font-weight: 500; color: var(--ink); }
   .welcome h2::after { content: ''; display: block; width: 56px; height: 5px; border-radius: 3px; background: var(--gold); margin: 14px auto 0; }
   .welcome p { color: var(--ink-soft); margin: 16px auto 26px; max-width: 440px; }
   .starter-list { display: grid; gap: 10px; text-align: left; }
-  .starter { display: flex; justify-content: space-between; align-items: center; gap: 12px; width: 100%; padding: 13px 16px; background: var(--card); border: 1px solid var(--line); border-left: 5px solid var(--gold); border-radius: 8px; font-size: 14.5px; color: var(--blue); cursor: pointer; text-align: left; transition: border-color .15s, background .15s; }
-  .starter:hover { background: var(--gold-20); border-color: var(--gold); }
-  .starter .arrow { color: var(--blue); flex-shrink: 0; }
+  .starter { display: flex; justify-content: space-between; align-items: center; gap: 12px; width: 100%; padding: 13px 16px; background: var(--card); border: 1px solid var(--line); border-left: 5px solid var(--gold); border-radius: 8px; font-size: 14.5px; color: var(--ink); cursor: pointer; text-align: left; transition: border-color .15s, background .15s; }
+  .starter:hover { background: var(--accent-bg); border-color: var(--gold); }
+  .starter .arrow { color: var(--ink); flex-shrink: 0; }
 
   /* Messages */
   .msg-user { display: flex; justify-content: flex-end; margin: 0 0 24px; }
-  .msg-user .bubble { max-width: 78%; background: var(--blue); color: #fff; padding: 10px 15px; border-radius: 16px 16px 4px 16px; white-space: pre-wrap; overflow-wrap: anywhere; font-size: 15px; }
+  .msg-user .bubble { max-width: 78%; background: var(--bubble); color: var(--bubble-ink); padding: 10px 15px; border-radius: 16px 16px 4px 16px; white-space: pre-wrap; overflow-wrap: anywhere; font-size: 15px; }
   .msg-tutor { display: grid; grid-template-columns: 32px minmax(0, 1fr); gap: 14px; margin: 0 0 28px; }
   .avatar { width: 32px; height: 32px; border-radius: 50%; background: var(--gold); color: var(--blue); display: grid; place-items: center; font-family: var(--font-display); font-style: italic; font-weight: 600; font-size: 17px; }
   .msg-error .md { color: var(--error); background: var(--error-soft); border-radius: 8px; padding: 10px 14px; font-size: 14px; }
 
   /* Rendered Markdown */
-  .md { font-size: 15.5px; line-height: 1.68; color: var(--blue); overflow-wrap: anywhere; }
+  .md { font-size: 15.5px; line-height: 1.68; color: var(--ink); overflow-wrap: anywhere; }
   .md > *:first-child { margin-top: 0; }
   .md > *:last-child { margin-bottom: 0; }
   .md p { margin: 0 0 .8em; }
-  .md strong { font-weight: 600; background: linear-gradient(transparent 60%, var(--gold-35) 60%); padding: 0 1px; }
+  .md strong { font-weight: 600; background: linear-gradient(transparent 60%, var(--accent-strong) 60%); padding: 0 1px; }
   .md em { font-style: italic; }
   .md ul, .md ol { margin: 0 0 .85em; padding-left: 1.4em; }
   .md li { margin: .3em 0; padding-left: .2em; }
   .md ul li::marker { color: var(--gold); font-size: 1.15em; }
-  .md ol li::marker { color: var(--blue); font-weight: 700; }
+  .md ol li::marker { color: var(--ink); font-weight: 700; }
   .md h1, .md h2, .md h3, .md h4 { font-family: var(--font-display); font-size: 1.08em; margin: 1.1em 0 .4em; }
-  .md blockquote { margin: 0 0 .85em; padding: 8px 14px; border-left: 4px solid var(--gold); background: var(--gold-20); border-radius: 0 6px 6px 0; }
-  .md code { font-family: var(--font-mono); font-size: .88em; background: var(--gray-12); border: 1px solid var(--line); padding: 1px 5px; border-radius: 4px; }
-  .md pre { background: var(--gray-12); border: 1px solid var(--line); padding: 12px 14px; border-radius: 6px; overflow-x: auto; }
+  .md blockquote { margin: 0 0 .85em; padding: 8px 14px; border-left: 4px solid var(--gold); background: var(--accent-bg); border-radius: 0 6px 6px 0; }
+  .md code { font-family: var(--font-mono); font-size: .88em; background: var(--surface-2); border: 1px solid var(--line); padding: 1px 5px; border-radius: 4px; }
+  .md pre { background: var(--surface-2); border: 1px solid var(--line); padding: 12px 14px; border-radius: 6px; overflow-x: auto; }
   .md pre code { border: none; padding: 0; background: none; }
-  .md a { color: var(--blue); text-decoration-color: var(--gold); text-decoration-thickness: 2px; text-underline-offset: 3px; }
-  .md hr { border: 0; border-top: 2px solid var(--gold-35); margin: 1.2em 0; }
+  .md a { color: var(--ink); text-decoration-color: var(--gold); text-decoration-thickness: 2px; text-underline-offset: 3px; }
+  .md hr { border: 0; border-top: 2px solid var(--accent-strong); margin: 1.2em 0; }
   .md table { border-collapse: separate; border-spacing: 0; margin: .3em 0 1em; font-size: 14px; font-variant-numeric: tabular-nums; display: block; overflow-x: auto; max-width: 100%; overflow-wrap: normal; border-radius: 8px; border: 1px solid var(--line); width: fit-content; }
-  .md th { font-family: var(--font-mono); font-size: 11.5px; font-weight: 500; text-transform: uppercase; letter-spacing: .05em; background: var(--blue); color: #fff; text-align: left; padding: 8px 14px; border-bottom: 3px solid var(--gold); }
+  .md th { font-family: var(--font-mono); font-size: 11.5px; font-weight: 500; text-transform: uppercase; letter-spacing: .05em; background: var(--solid); color: #fff; text-align: left; padding: 8px 14px; border-bottom: 3px solid var(--gold); }
   .md td { padding: 7px 14px; border-bottom: 1px solid var(--line); }
-  .md tr:nth-child(even) td { background: var(--gray-12); }
+  .md tr:nth-child(even) td { background: var(--surface-2); }
   .md tbody tr:last-child td { border-bottom: none; }
 
   /* Typing indicator */
@@ -139,87 +150,225 @@
 
   /* Composer */
   .composer { display: flex; gap: 10px; align-items: flex-end; padding: 14px 16px 6px; border-top: 1px solid var(--line); background: var(--card); }
-  .composer textarea { flex: 1; resize: none; font-family: var(--font-body); font-size: 15px; line-height: 1.45; padding: 11px 14px; border: 2px solid var(--line); border-radius: 10px; max-height: 180px; color: var(--blue); background: var(--card); }
+  .composer textarea { flex: 1; resize: none; font-family: var(--font-body); font-size: 15px; line-height: 1.45; padding: 11px 14px; border: 2px solid var(--line); border-radius: 10px; max-height: 180px; color: var(--ink); background: var(--card); }
   .composer textarea::placeholder { color: var(--ink-soft); }
-  .composer textarea:focus { outline: none; border-color: var(--blue); box-shadow: 0 0 0 4px var(--gold-35); }
-  .send-btn { width: 48px; height: 48px; flex-shrink: 0; border: none; border-radius: 10px; background: var(--blue); color: var(--gold); display: grid; place-items: center; cursor: pointer; transition: background .15s, color .15s; }
+  .composer textarea:focus { outline: none; border-color: var(--focus); box-shadow: 0 0 0 4px var(--accent-strong); }
+  .send-btn { width: 48px; height: 48px; flex-shrink: 0; border: none; border-radius: 10px; background: var(--send-bg); color: var(--send-ink); display: grid; place-items: center; cursor: pointer; transition: background .15s, color .15s; }
   .send-btn:hover { background: var(--gold); color: var(--blue); }
   .send-btn:disabled { opacity: .4; cursor: default; }
   .composer-hint { font-family: var(--font-mono); font-size: 11px; color: var(--ink-soft); padding: 2px 16px 10px; }
 
   /* Student side panel */
   .panel-card { background: var(--card); border: 1px solid var(--line); border-radius: 12px; overflow: hidden; box-shadow: 0 1px 3px rgba(17, 46, 81, .06); }
-  .panel-head { display: flex; justify-content: space-between; align-items: baseline; background: var(--blue); color: #fff; padding: 14px 20px; border-bottom: 4px solid var(--gold); }
+  .panel-head { display: flex; justify-content: space-between; align-items: baseline; background: var(--solid); color: #fff; padding: 14px 20px; border-bottom: 4px solid var(--gold); }
   .panel-title { font-family: var(--font-display); font-size: 18px; font-weight: 600; }
   .updating { font-family: var(--font-mono); font-size: 11px; color: var(--gold); }
   .panel-body { padding: 16px 20px 20px; }
   .stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
-  .stat { background: var(--gold-20); border: 1px solid var(--gold-35); border-radius: 10px; padding: 10px 6px 9px; text-align: center; }
-  .stat-num { font-family: var(--font-display); font-size: 25px; font-weight: 600; line-height: 1.1; color: var(--blue); }
+  .stat { background: var(--accent-bg); border: 1px solid var(--accent-strong); border-radius: 10px; padding: 10px 6px 9px; text-align: center; }
+  .stat-num { font-family: var(--font-display); font-size: 25px; font-weight: 600; line-height: 1.1; color: var(--ink); }
   .stat-label { font-size: 11.5px; color: var(--ink-soft); line-height: 1.25; margin-top: 3px; }
   .panel-label { font-family: var(--font-mono); font-size: 10.5px; font-weight: 500; text-transform: uppercase; letter-spacing: .09em; color: var(--ink-soft); margin: 20px 0 9px; display: flex; align-items: center; gap: 8px; }
   .panel-label::before { content: ''; width: 14px; height: 3px; border-radius: 2px; background: var(--gold); }
-  .topic-chip { display: inline-block; font-size: 12.5px; font-weight: 500; background: var(--blue); color: #fff; padding: 4px 11px; border-radius: 999px; margin: 0 6px 6px 0; }
+  .topic-chip { display: inline-block; font-size: 12.5px; font-weight: 500; background: var(--solid); color: #fff; padding: 4px 11px; border-radius: 999px; margin: 0 6px 6px 0; }
   .takeaways { list-style: none; margin: 0; padding: 0; }
   .takeaways li { display: grid; grid-template-columns: 18px 1fr; gap: 9px; font-size: 13.5px; line-height: 1.5; margin-bottom: 9px; }
   .takeaways svg { margin-top: 2px; }
   .takeaways svg circle { fill: var(--gold); }
   .takeaways svg path { stroke: var(--blue); }
-  .next-q { display: flex; justify-content: space-between; align-items: center; gap: 10px; width: 100%; text-align: left; background: var(--card); border: 1px solid var(--line); border-left: 5px solid var(--gold); border-radius: 8px; padding: 10px 12px; font-size: 13.5px; color: var(--blue); cursor: pointer; margin-bottom: 8px; transition: background .15s, border-color .15s; }
-  .next-q:hover { background: var(--gold-20); border-color: var(--gold); }
+  .next-q { display: flex; justify-content: space-between; align-items: center; gap: 10px; width: 100%; text-align: left; background: var(--card); border: 1px solid var(--line); border-left: 5px solid var(--gold); border-radius: 8px; padding: 10px 12px; font-size: 13.5px; color: var(--ink); cursor: pointer; margin-bottom: 8px; transition: background .15s, border-color .15s; }
+  .next-q:hover { background: var(--accent-bg); border-color: var(--gold); }
   .next-q:disabled { opacity: .5; cursor: default; }
-  .next-q .arrow { color: var(--blue); flex-shrink: 0; }
+  .next-q .arrow { color: var(--ink); flex-shrink: 0; }
   .panel-empty { font-size: 13.5px; color: var(--ink-soft); margin: 16px 0 0; }
+
+  /* Sharing switch (student) */
+  .share-setting { margin-top: 18px; padding-top: 14px; border-top: 1px solid var(--line); }
+  .share-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+  .share-label { font-size: 13.5px; font-weight: 600; line-height: 1.35; }
+  .switch { position: relative; flex-shrink: 0; width: 46px; height: 26px; border-radius: 999px; border: 2px solid var(--ink-soft); background: var(--surface-3); cursor: pointer; padding: 0; transition: background .15s, border-color .15s; }
+  .switch .knob { position: absolute; top: 2px; left: 2px; width: 18px; height: 18px; border-radius: 50%; background: var(--ink-soft); transition: transform .15s, background .15s; }
+  .switch[aria-checked="true"] { background: var(--solid); border-color: var(--solid); }
+  .switch[aria-checked="true"] .knob { transform: translateX(20px); background: var(--gold); }
+  .switch:disabled { opacity: .6; cursor: default; }
+  @media (prefers-reduced-motion: reduce) { .switch, .switch .knob { transition: none; } }
+  .share-help { font-size: 12px; color: var(--ink-soft); margin: 8px 0 0; line-height: 1.45; }
+
+  /* Summary-only (instructor) */
+  .badge-private { display: inline-flex; align-items: center; gap: 4px; background: var(--surface-3); color: var(--ink); }
+  .t-summary-title { font-style: italic; }
+  .head-lock { display: inline-flex; vertical-align: middle; margin-right: 8px; color: var(--gold); }
+  .head-lock svg { width: 15px; height: 15px; }
+  .private-notice { display: flex; gap: 12px; align-items: flex-start; margin: 22px 22px 6px; padding: 14px 16px; background: var(--surface-2); border: 1px solid var(--line); border-left: 5px solid var(--gray); border-radius: 8px; font-size: 14px; line-height: 1.5; }
+  .pn-icon { color: var(--ink); margin-top: 3px; }
+
+  /* Instructor notes, student side */
+  .msg-instructor { display: grid; grid-template-columns: 32px minmax(0, 1fr); gap: 14px; margin: 0 0 28px; }
+  .avatar-inst { background: var(--solid); color: var(--gold); }
+  .note-card { background: var(--accent-bg); border: 1px solid var(--accent-strong); border-left: 5px solid var(--focus); border-radius: 8px; padding: 10px 16px 12px; }
+  .note-label { font-family: var(--font-mono); font-size: 11px; font-weight: 500; text-transform: uppercase; letter-spacing: .07em; color: var(--ink); margin-bottom: 4px; }
+  .note-card .md { font-size: 15px; }
+  .note-banner { display: flex; align-items: center; gap: 10px; padding: 10px 16px; background: var(--gold); color: var(--blue); font-size: 14px; font-weight: 500; }
+  .note-banner[hidden] { display: none; }
+  .nb-icon { display: grid; place-items: center; }
+  .nb-btn { margin-left: auto; flex-shrink: 0; font-family: var(--font-body); font-weight: 600; font-size: 13px; padding: 5px 12px; border-radius: 6px; border: 2px solid var(--blue); background: var(--blue); color: #fff; cursor: pointer; }
+  .nb-btn:hover { background: #fff; color: var(--blue); }
+  .notes-card { margin-bottom: 16px; }
+  .earlier-note + .earlier-note { margin-top: 14px; padding-top: 14px; border-top: 1px solid var(--line); }
+  .en-meta { display: flex; align-items: center; gap: 8px; font-family: var(--font-mono); font-size: 11px; color: var(--ink-soft); text-transform: uppercase; letter-spacing: .05em; }
+  .new-badge { background: var(--gold); color: var(--blue); font-weight: 600; padding: 1px 8px; border-radius: 999px; letter-spacing: .04em; }
+  .en-q { font-size: 12.5px; color: var(--ink-soft); font-style: italic; margin: 6px 0 4px; }
+  .en-body { font-size: 14px; line-height: 1.55; }
 
   /* ---------- Instructor dashboard ---------- */
   .dash-wrap { max-width: 1100px; margin: 0 auto; padding: 26px 20px 60px; }
   .dash-tabs { display: flex; gap: 8px; margin-bottom: 20px; flex-wrap: wrap; }
   .dash-tab { font-family: var(--font-mono); font-size: 12px; text-transform: uppercase; letter-spacing: .5px; padding: 8px 16px; border: 1px solid var(--line); background: var(--card); border-radius: 6px; cursor: pointer; color: var(--ink-soft); }
-  .dash-tab:hover { border-color: var(--blue); color: var(--blue); }
-  .dash-tab.active { background: var(--blue); color: #fff; border-color: var(--blue); box-shadow: inset 0 -3px 0 var(--gold); }
+  .dash-tab:hover { border-color: var(--ink); color: var(--ink); }
+  .dash-tab.active { background: var(--solid); color: #fff; border-color: var(--solid); box-shadow: inset 0 -3px 0 var(--gold); }
   .dash-controls { display: flex; align-items: center; gap: 14px; margin-bottom: 20px; flex-wrap: wrap; }
-  .dash-controls input[type=date] { font-family: var(--font-mono); padding: 8px 10px; border: 1px solid var(--line); border-radius: 6px; background: var(--card); color: var(--blue); }
+  .dash-controls input[type=date] { font-family: var(--font-mono); padding: 8px 10px; border: 1px solid var(--line); border-radius: 6px; background: var(--card); color: var(--ink); }
   .dash-note { font-family: var(--font-mono); font-size: 12px; color: var(--ink-soft); }
   .box { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 20px; margin-bottom: 22px; }
   .box h2 { font-size: 18px; margin-bottom: 12px; }
   .struggle-bar-row { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; }
   .struggle-bar-label { width: 240px; font-size: 13px; flex-shrink: 0; }
-  .struggle-bar-track { flex: 1; background: var(--gray-25); border-radius: 3px; height: 10px; overflow: hidden; }
+  .struggle-bar-track { flex: 1; background: var(--surface-3); border-radius: 3px; height: 10px; overflow: hidden; }
   .struggle-bar-fill { height: 100%; background: var(--error); }
   .struggle-bar-count { font-family: var(--font-mono); font-size: 11px; color: var(--ink-soft); width: 26px; text-align: right; }
-  .student-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 16px; }
-  .student-card { background: var(--card); border: 1px solid var(--line); border-top: 4px solid var(--gold); border-radius: 12px; padding: 16px; }
-  .sname { font-family: var(--font-display); font-size: 16px; }
-  .sid { font-family: var(--font-mono); font-size: 11px; color: var(--ink-soft); margin-bottom: 8px; }
   .mastery-pill { display: inline-block; font-family: var(--font-mono); font-size: 11px; padding: 3px 10px; border-radius: 20px; margin-bottom: 8px; }
   .mastery-struggling { background: var(--error-soft); color: var(--error); }
-  .mastery-developing { background: var(--gold-35); color: var(--blue); }
-  .mastery-solid { background: var(--blue); color: #fff; }
-  .topic-tag { display: inline-block; font-size: 12px; background: var(--gray-12); border: 1px solid var(--line); padding: 3px 8px; border-radius: 4px; margin: 3px 3px 0 0; }
+  .mastery-developing { background: var(--accent-strong); color: var(--ink); }
+  .mastery-solid { background: var(--solid); color: #fff; }
+  .topic-tag { display: inline-block; font-size: 12px; background: var(--surface-2); border: 1px solid var(--line); padding: 3px 8px; border-radius: 4px; margin: 3px 3px 0 0; }
   .miscon-item { font-size: 12.5px; color: var(--error); margin-top: 6px; padding-left: 12px; border-left: 2px solid var(--error); }
   .small-label { font-size: 12px; color: var(--ink-soft); margin: 10px 0 4px; }
   .followup { font-size: 12px; font-style: italic; color: var(--ink-soft); margin-top: 10px; border-top: 1px solid var(--line); padding-top: 8px; }
-  .history-btn { font-family: var(--font-mono); font-size: 11px; color: var(--blue); background: none; border: none; text-decoration: underline; text-decoration-color: var(--gold); cursor: pointer; padding: 0; margin-top: 10px; }
-  .history-panel { margin-top: 10px; border-top: 1px solid var(--line); padding-top: 10px; }
-  .history-day { font-size: 12px; margin-bottom: 8px; }
-  .history-day .hdate { font-family: var(--font-mono); color: var(--ink-soft); }
+  .mastery-pending { background: var(--surface-3); color: var(--ink-soft); }
+  .select, .search { font-family: var(--font-body); font-size: 14px; padding: 8px 12px; border: 1px solid var(--line); border-radius: 6px; background: var(--card); color: var(--ink); }
+  .search { min-width: 240px; }
+  .select:focus, .search:focus { outline: none; border-color: var(--focus); box-shadow: 0 0 0 4px var(--accent-strong); }
+  .watch-box summary { cursor: pointer; list-style: none; }
+  .watch-box summary::-webkit-details-marker { display: none; }
+  .watch-box summary h2 { display: inline; }
+  .watch-box summary::after { content: ' ▾'; color: var(--ink-soft); font-size: 13px; }
+  .watch-box:not([open]) summary::after { content: ' ▸'; }
+  .watch-box[open] summary { margin-bottom: 12px; }
+
+  /* Thread list */
+  .thread-list { list-style: none; margin: 0; padding: 0; background: var(--card); border: 1px solid var(--line); border-radius: 12px; overflow: hidden; }
+  .thread-row { display: grid; grid-template-columns: 40px minmax(0, 1fr) auto; gap: 14px; width: 100%; text-align: left; padding: 15px 18px; background: none; border: none; border-bottom: 1px solid var(--line); cursor: pointer; color: var(--ink); font: inherit; transition: background .12s; }
+  .thread-list li:last-child .thread-row { border-bottom: none; }
+  .thread-row:hover { background: var(--accent-bg); }
+  .t-avatar { width: 40px; height: 40px; border-radius: 50%; background: var(--solid); color: #fff; display: grid; place-items: center; font-size: 13px; font-weight: 600; letter-spacing: .03em; }
+  .t-main { min-width: 0; }
+  .t-title { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; font-weight: 600; font-size: 15px; line-height: 1.35; }
+  .t-meta { display: block; font-size: 12.5px; color: var(--ink-soft); margin-top: 4px; }
+  .t-meta strong { color: var(--ink); font-weight: 600; }
+  .t-meta .mono { font-size: 11.5px; }
+  .t-topics { display: block; margin-top: 4px; }
+  .t-topics .topic-tag { font-size: 11.5px; padding: 1px 7px; }
+  .t-side { display: flex; flex-direction: column; align-items: flex-end; gap: 6px; text-align: right; font-size: 12px; color: var(--ink-soft); white-space: nowrap; }
+  .t-badges { display: flex; gap: 5px; flex-wrap: wrap; justify-content: flex-end; }
+  .t-badges .mastery-pill { margin: 0; }
+  .t-time { font-family: var(--font-mono); font-size: 11px; }
+  .badge { font-family: var(--font-mono); font-size: 11px; padding: 3px 9px; border-radius: 999px; }
+  .badge-flag { background: var(--error-soft); color: var(--error); }
+  .badge-replied { background: var(--accent-strong); color: var(--ink); }
+  @media (max-width: 700px) {
+    .thread-row { grid-template-columns: 34px minmax(0, 1fr); padding: 14px; }
+    .t-avatar { width: 34px; height: 34px; font-size: 12px; }
+    .t-side { grid-column: 2; flex-direction: row; flex-wrap: wrap; align-items: center; justify-content: flex-start; text-align: left; }
+    .t-badges { justify-content: flex-start; }
+    .search { min-width: 0; flex: 1 1 100%; order: -1; }
+  }
+
+  /* Thread view */
+  .back-link { display: inline-block; margin-bottom: 14px; font-size: 13px; }
+  .thread-layout { display: grid; grid-template-columns: minmax(0, 1fr) 300px; gap: 22px; align-items: start; }
+  @media (max-width: 860px) { .thread-layout { grid-template-columns: 1fr; } }
+  .thread-main { background: var(--card); border: 1px solid var(--line); border-radius: 12px; overflow: hidden; }
+  .thread-head { background: var(--solid); color: #fff; padding: 18px 22px; border-bottom: 4px solid var(--gold); }
+  .thread-head h2 { font-size: 20px; line-height: 1.3; color: #fff; }
+  .thread-head .t-meta { color: var(--gray-25); }
+  .posts { list-style: none; margin: 0; padding: 22px 22px 6px; }
+  .post { display: grid; grid-template-columns: 36px minmax(0, 1fr); gap: 12px; margin-bottom: 16px; }
+  .post-avatar { width: 36px; height: 36px; border-radius: 50%; background: var(--solid); color: #fff; display: grid; place-items: center; font-size: 12.5px; font-weight: 600; }
+  .post-assistant .post-avatar { background: var(--gold); color: var(--blue); font-family: var(--font-display); font-style: italic; font-size: 17px; }
+  .post-instructor .post-avatar { color: var(--gold); }
+  .post-card { border: 1px solid var(--line); border-radius: 10px; padding: 12px 16px; background: var(--card); min-width: 0; }
+  .post-user .post-card { background: var(--surface-2); }
+  .post-instructor .post-card { background: var(--accent-bg); border-color: var(--accent-strong); border-left: 5px solid var(--focus); }
+  .post-head { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; margin-bottom: 6px; }
+  .post-author { font-weight: 600; }
+  .post-tag { font-family: var(--font-mono); font-size: 10.5px; text-transform: uppercase; letter-spacing: .06em; color: var(--ink-soft); }
+  .post-time { margin-left: auto; font-family: var(--font-mono); font-size: 11.5px; color: var(--ink-soft); }
+  .post-body { font-size: 15px; line-height: 1.6; }
+  .post-user .post-body { white-space: pre-wrap; overflow-wrap: anywhere; }
+  .post-foot { display: flex; justify-content: space-between; align-items: center; gap: 10px; margin-top: 10px; font-size: 12px; color: var(--ink-soft); }
+  .reply-box { border-top: 1px solid var(--line); padding: 18px 22px 22px; background: var(--surface-2); }
+  .reply-box label { display: block; font-weight: 600; margin-bottom: 8px; }
+  .reply-box textarea { width: 100%; font-family: var(--font-body); font-size: 15px; line-height: 1.5; padding: 10px 12px; border: 2px solid var(--line); border-radius: 8px; background: var(--card); color: var(--ink); resize: vertical; }
+  .reply-box textarea:focus { outline: none; border-color: var(--focus); box-shadow: 0 0 0 4px var(--accent-strong); }
+  .reply-box .form-error { margin: 10px 0 0; }
+  .reply-foot { display: flex; justify-content: space-between; align-items: center; gap: 16px; margin-top: 12px; flex-wrap: wrap; }
+  .reply-foot .dash-note { flex: 1; min-width: 220px; font-family: var(--font-body); font-size: 12.5px; }
+  .thread-aside .box h3 { font-size: 16px; margin-bottom: 10px; }
+  .link-btn.plain { font-family: var(--font-body); font-size: 13px; padding: 0; }
   .data-table { width: 100%; border-collapse: collapse; background: var(--card); border: 1px solid var(--line); border-radius: 12px; overflow: hidden; }
   .data-table th, .data-table td { text-align: left; padding: 10px 14px; font-size: 13px; border-bottom: 1px solid var(--line); }
-  .data-table th { font-family: var(--font-mono); font-size: 11px; font-weight: 500; text-transform: uppercase; color: #fff; background: var(--blue); border-bottom: 3px solid var(--gold); }
+  .data-table th { font-family: var(--font-mono); font-size: 11px; font-weight: 500; text-transform: uppercase; color: #fff; background: var(--solid); border-bottom: 3px solid var(--gold); }
   .data-table tr:last-child td { border-bottom: none; }
   .data-table .muted { color: var(--ink-soft); font-style: italic; }
   .table-scroll { overflow-x: auto; }
   .roster-grid { display: grid; grid-template-columns: minmax(0, 380px) minmax(0, 1fr); gap: 22px; align-items: start; }
   @media (max-width: 860px) { .roster-grid { grid-template-columns: 1fr; } .struggle-bar-label { width: 140px; } }
   .help { font-size: 13.5px; color: var(--ink-soft); margin: 0 0 12px; }
-  .roster-input { width: 100%; font-family: var(--font-mono); font-size: 13px; line-height: 1.6; padding: 10px 12px; border: 2px solid var(--line); border-radius: 8px; background: var(--card); color: var(--blue); resize: vertical; }
-  .roster-input:focus { outline: none; border-color: var(--blue); box-shadow: 0 0 0 4px var(--gold-35); }
+  .roster-input { width: 100%; font-family: var(--font-mono); font-size: 13px; line-height: 1.6; padding: 10px 12px; border: 2px solid var(--line); border-radius: 8px; background: var(--card); color: var(--ink); resize: vertical; }
+  .roster-input:focus { outline: none; border-color: var(--focus); box-shadow: 0 0 0 4px var(--accent-strong); }
   .roster-actions { display: flex; align-items: center; gap: 12px; margin-top: 12px; flex-wrap: wrap; }
   .roster-result { font-size: 13px; color: var(--ink-soft); margin-top: 12px; }
   .roster-result .warn { color: var(--error); }
   .remove-btn { font-family: var(--font-mono); font-size: 11px; background: none; border: 1px solid var(--line); border-radius: 4px; padding: 3px 8px; color: var(--ink-soft); cursor: pointer; }
   .remove-btn.confirm { border-color: var(--error); color: #fff; background: var(--error); }
   .empty-state { text-align: center; padding: 56px 20px; color: var(--ink-soft); font-family: var(--font-mono); font-size: 13px; }
+
+  /* ---------- Dark theme: brand blue surfaces, gold accents, brand gray for secondary text.
+     Darker blues are the official blue mixed with black (shades). ---------- */
+  html[data-theme="dark"] {
+    color-scheme: dark;
+    --page: #09192D; --solid: #0C2039; --card: #112E51; --surface-2: #0E2745; --surface-3: #294362; --line: #354D6B;
+    --ink: #F4F5F7; --ink-soft: #A0AEC0;
+    --accent-bg: rgba(253, 183, 54, .10); --accent-strong: rgba(253, 183, 54, .26);
+    --focus: var(--gold); --bubble: var(--gold); --bubble-ink: var(--blue); --send-bg: var(--gold); --send-ink: var(--blue);
+    --error: #F2A193; --error-soft: rgba(242, 161, 147, .14);
+  }
+  html[data-theme="dark"] .role-btn.primary { background: var(--gold); color: var(--blue); border-color: var(--gold); }
+  html[data-theme="dark"] .role-btn.primary:hover { background: #fff; border-color: #fff; }
+  html[data-theme="dark"] .send-btn:hover { background: #fff; color: var(--blue); }
+  html[data-theme="dark"] .remove-btn.confirm { color: var(--blue); }
+  html[data-theme="dark"] .dash-tab.active { border-color: var(--gold); }
+  html[data-theme="dark"] .mastery-pending { color: var(--ink); }
+  /* Translucent gold turns muddy on blue, so dark mode uses solid gold accents instead. */
+  html[data-theme="dark"] .md strong { background: none; color: var(--gold); }
+  html[data-theme="dark"] .stat { background: var(--surface-2); border-color: var(--line); box-shadow: inset 0 3px 0 var(--gold); }
+  html[data-theme="dark"] .note-card, html[data-theme="dark"] .post-instructor .post-card { background: var(--surface-2); border-color: var(--line); border-left-color: var(--gold); }
+  html[data-theme="dark"] .note-label { color: var(--gold); }
+  html[data-theme="dark"] .md blockquote { background: var(--surface-2); }
+  html[data-theme="dark"] .mastery-developing, html[data-theme="dark"] .badge-replied { background: var(--gold); color: var(--blue); }
+  html[data-theme="dark"] .gate-card, html[data-theme="dark"] .chat-panel, html[data-theme="dark"] .panel-card { box-shadow: 0 8px 24px rgba(0, 0, 0, .25); }
+
+  /* Theme switch (in every header) */
+  .theme-switch { position: relative; flex-shrink: 0; width: 54px; height: 28px; border-radius: 999px; padding: 0; cursor: pointer; background: rgba(255, 255, 255, .12); border: 1.5px solid rgba(255, 255, 255, .35); }
+  .theme-switch .ts-knob { position: absolute; top: 2px; left: 2px; width: 21px; height: 21px; border-radius: 50%; background: var(--gold); color: var(--blue); display: grid; place-items: center; transition: transform .18s; }
+  .theme-switch[aria-checked="true"] .ts-knob { transform: translateX(26px); }
+  .theme-switch .ts-moon, html[data-theme="dark"] .theme-switch .ts-sun { display: none; }
+  html[data-theme="dark"] .theme-switch .ts-moon { display: block; }
+  .theme-switch:hover { border-color: var(--gold); }
+  @media (prefers-reduced-motion: reduce) { .theme-switch .ts-knob { transition: none; } }
+  .landing-hero { position: relative; }
+  .landing-theme { position: absolute; top: 18px; right: 20px; }
+  .topbar-tools { display: flex; align-items: center; gap: 16px; }
 </style>
 </head>
 <body>
@@ -253,6 +402,8 @@
   const localToday = () => new Date().toLocaleDateString('en-CA');
   const ARROW = '<svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M3 8h9M8.5 4.5 12 8l-3.5 3.5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>';
   const SEND = '<svg width="18" height="18" viewBox="0 0 18 18" fill="none" aria-hidden="true"><path d="M9 14.5V3.5M4.5 8 9 3.5 13.5 8" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+  const CAP = '<svg width="18" height="18" viewBox="0 0 20 20" fill="none" aria-hidden="true"><path d="M10 3 1.5 7.5 10 12l8.5-4.5L10 3Z" fill="currentColor"/><path d="M5 9.7v3.6c0 1.2 2.2 2.7 5 2.7s5-1.5 5-2.7V9.7" stroke="currentColor" stroke-width="1.6"/><path d="M17.5 8v4.5" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg>';
+  const LOCK = '<svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true"><rect x="2" y="5.2" width="8" height="5.8" rx="1.2" fill="currentColor"/><path d="M3.8 5.2V3.8a2.2 2.2 0 0 1 4.4 0v1.4" stroke="currentColor" stroke-width="1.3"/></svg>';
   const CHECK = '<svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true"><circle cx="8" cy="8" r="8"/><path d="M4.8 8.3 7 10.4l4.2-4.6" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>';
   // Supply (gold) and demand (white) on the blue landing page; axes in the university gray.
   const CURVES = `
@@ -281,16 +432,47 @@
     return data;
   }
 
-  function go(view) { state.view = view; render(); }
+  let poller = null; // student view's periodic check for new instructor notes
+  const SUN = '<svg class="ts-sun" width="13" height="13" viewBox="0 0 14 14" fill="none" aria-hidden="true"><circle cx="7" cy="7" r="2.6" fill="currentColor"/><path d="M7 .9v1.6M7 11.5v1.6M.9 7h1.6M11.5 7h1.6M2.7 2.7l1.1 1.1M10.2 10.2l1.1 1.1M2.7 11.3l1.1-1.1M10.2 3.8l1.1-1.1" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>';
+  const MOON = '<svg class="ts-moon" width="12" height="12" viewBox="0 0 14 14" fill="none" aria-hidden="true"><path d="M11.8 9.2A5.3 5.3 0 0 1 4.8 2.2a5.3 5.3 0 1 0 7 7Z" fill="currentColor"/></svg>';
+  const isDark = () => document.documentElement.getAttribute('data-theme') === 'dark';
+  function themeSwitch(extraClass) {
+    return `<button class="theme-switch ${extraClass || ''}" role="switch" aria-checked="${isDark()}" aria-label="Dark mode" title="Dark mode"><span class="ts-knob">${SUN}${MOON}</span></button>`;
+  }
+  function bindThemeSwitches() {
+    document.querySelectorAll('.theme-switch').forEach(b => b.onclick = () => {
+      const next = isDark() ? 'light' : 'dark';
+      document.documentElement.setAttribute('data-theme', next);
+      try { localStorage.setItem('ceterisTheme', next); } catch (e) {}
+      document.querySelectorAll('.theme-switch').forEach(x => x.setAttribute('aria-checked', next === 'dark'));
+    });
+  }
+  // Until someone picks a theme on this device, follow the device's own light/dark setting.
+  if (window.matchMedia) {
+    matchMedia('(prefers-color-scheme: dark)').addEventListener('change', e => {
+      let saved = null;
+      try { saved = localStorage.getItem('ceterisTheme'); } catch (err) {}
+      if (saved) return;
+      document.documentElement.setAttribute('data-theme', e.matches ? 'dark' : 'light');
+      document.querySelectorAll('.theme-switch').forEach(x => x.setAttribute('aria-checked', e.matches));
+    });
+  }
+
+  function go(view) {
+    if (poller) { clearInterval(poller); poller = null; }
+    state.view = view; render();
+  }
   function render() {
     ({ 'landing': renderLanding, 'student-login': renderStudentLogin, 'student-chat': renderStudentChat,
        'instructor-login': renderInstructorLogin, 'instructor': renderInstructor })[state.view]();
+    bindThemeSwitches();
   }
 
   // ---------- Landing ----------
   function renderLanding() {
     root.innerHTML = `
       <div class="landing-hero">
+        <div class="landing-theme">${themeSwitch()}</div>
         <main class="landing">
           <div class="wordmark">Ceteris</div>
           <div class="tagline">an economics tutor, all else held equal</div>
@@ -309,7 +491,7 @@
   // ---------- Student login ----------
   function renderStudentLogin() {
     root.innerHTML = `
-      <header class="topbar"><div class="brand">Ceteris</div><button class="link-btn" id="back">← back</button></header>
+      <header class="topbar"><div class="brand">Ceteris</div><div class="topbar-tools">${themeSwitch()}<button class="link-btn" id="back">← back</button></div></header>
       <main class="gate">
         <form class="gate-card" id="login-form" novalidate>
           <h1>Welcome to Ceteris</h1>
@@ -318,7 +500,7 @@
           <input id="sid" class="id-input" maxlength="6" autocomplete="off" autocapitalize="characters" spellcheck="false" placeholder="······" />
           <div class="form-error" id="err" role="alert" hidden></div>
           <button class="role-btn primary full" id="go" type="submit">Start session</button>
-          <p class="fine">Your instructor sees a summary of what you worked on, not your full conversation.</p>
+          <p class="fine">By default your instructor sees only a summary of your conversations, not your words. You can choose to share full conversations once you're in.</p>
         </form>
       </main>`;
     const input = document.getElementById('sid');
@@ -360,12 +542,14 @@
       <header class="topbar">
         <div class="brand">Ceteris</div>
         <div class="topbar-right">
+          ${themeSwitch()}
           <span class="who">${escapeHtml(s.name || '')}<span class="mono">${escapeHtml(s.studentId)}</span></span>
           <button class="link-btn" id="logout">Log out</button>
         </div>
       </header>
       <main class="student-main">
         <section class="chat-panel" aria-label="Conversation">
+          <div class="note-banner" id="note-banner" hidden></div>
           <div class="chat-scroll" id="chat-scroll" role="log" aria-live="polite"></div>
           <form class="composer" id="composer">
             <label for="chat-input" class="sr-only">Your question</label>
@@ -383,6 +567,10 @@
     const side = document.getElementById('side-panel');
     let messages = [], panel = null, stats = { questionsToday: 0, daysActive: 0, topicsExplored: 0 };
     let busy = false, updating = false;
+    let notes = [], instructorName = 'Your instructor';
+    let shareTranscripts = !!s.shareTranscripts, savingShare = false;
+    const newNoteIds = new Set(); // stays "new" for this visit even after the server marks it seen
+    const banner = document.getElementById('note-banner');
 
     document.getElementById('logout').onclick = () => logoutStudent();
 
@@ -401,6 +589,7 @@
       }
       scroll.innerHTML = messages.map(m => {
         if (m.role === 'user') return `<div class="msg-user"><div class="bubble">${escapeHtml(m.content)}</div></div>`;
+        if (m.role === 'instructor') return `<div class="msg-instructor"><div class="avatar avatar-inst" aria-hidden="true">${CAP}</div><div class="note-card"><div class="note-label">Note from ${escapeHtml(instructorName)}</div><div class="md">${renderMarkdown(m.content)}</div></div></div>`;
         const cls = m.role === 'error' ? 'msg-tutor msg-error' : 'msg-tutor';
         return `<div class="${cls}"><div class="avatar" aria-hidden="true">C</div><div class="md">${m.role === 'error' ? '<p>' + escapeHtml(m.content) + '</p>' : renderMarkdown(m.content)}</div></div>`;
       }).join('') + (busy ? `<div class="msg-tutor"><div class="avatar" aria-hidden="true">C</div><div class="typing" aria-label="Ceteris is writing"><span></span><span></span><span></span></div></div>` : '');
@@ -413,7 +602,18 @@
 
     function renderPanel() {
       const has = panel && (panel.topics.length || panel.takeaways.length || panel.suggestedQuestions.length);
+      const shownNotes = notes.filter(n => newNoteIds.has(n.id)).concat(notes.filter(n => !newNoteIds.has(n.id)).slice(0, 3));
       side.innerHTML = `
+        ${shownNotes.length ? `<div class="panel-card notes-card" id="notes-card">
+          <div class="panel-head"><div class="panel-title">From ${escapeHtml(instructorName)}</div></div>
+          <div class="panel-body">${shownNotes.map(n => `
+            <div class="earlier-note">
+              <div class="en-meta">${newNoteIds.has(n.id) ? '<span class="new-badge">New</span>' : ''}<span>${escapeHtml(fmtDay(n.day))}</span></div>
+              ${n.question ? `<div class="en-q">About your question: “${escapeHtml(truncate(n.question, 90))}”</div>` : ''}
+              <div class="md en-body">${renderMarkdown(n.content)}</div>
+            </div>`).join('')}
+          </div>
+        </div>` : ''}
         <div class="panel-card">
           <div class="panel-head"><div class="panel-title">Today's session</div>${updating ? '<span class="updating">updating…</span>' : ''}</div>
           <div class="panel-body">
@@ -426,9 +626,34 @@
           ${has && panel.topics.length ? `<div class="panel-label">Topics you explored</div><div>${panel.topics.map(t => `<span class="topic-chip">${escapeHtml(t)}</span>`).join('')}</div>` : ''}
           ${has && panel.takeaways.length ? `<div class="panel-label">What you worked through</div><ul class="takeaways">${panel.takeaways.map(t => `<li>${CHECK}<span>${escapeHtml(t)}</span></li>`).join('')}</ul>` : ''}
           ${has && panel.suggestedQuestions.length ? `<div class="panel-label">Try asking next</div>${panel.suggestedQuestions.map(q => `<button class="next-q" data-q="${escapeHtml(q)}" ${busy ? 'disabled' : ''}><span>${escapeHtml(q)}</span><span class="arrow">${ARROW}</span></button>`).join('')}` : ''}
+          <div class="share-setting">
+            <div class="share-row">
+              <span class="share-label" id="share-label">Share full conversations with ${escapeHtml(instructorName === 'Your instructor' ? 'your instructor' : instructorName)}</span>
+              <button class="switch" id="share-switch" role="switch" aria-checked="${shareTranscripts}" aria-labelledby="share-label" ${savingShare ? 'disabled' : ''}><span class="knob"></span></button>
+            </div>
+            <p class="share-help">${shareTranscripts
+              ? 'On: your instructor can read your conversations with Ceteris, including earlier ones. Turn it off anytime.'
+              : "Off: your instructor sees only a summary of each conversation (the topics, Ceteris's read on how it's going, and any misconceptions it noticed), never your own words."}
+              Either way, your instructor may add a note.</p>
+          </div>
           </div>
         </div>`;
       side.querySelectorAll('[data-q]').forEach(b => b.onclick = () => send(b.dataset.q));
+      document.getElementById('share-switch').onclick = toggleShare;
+    }
+
+    async function toggleShare() {
+      const next = !shareTranscripts;
+      savingShare = true; renderPanel();
+      try {
+        shareTranscripts = (await api('/api/settings', { method: 'POST', body: { shareTranscripts: next }, token })).shareTranscripts;
+        state.student.shareTranscripts = shareTranscripts;
+      } catch (e) {
+        if (e.status === 401) return logoutStudent();
+      }
+      savingShare = false; renderPanel();
+      const sw = document.getElementById('share-switch');
+      if (sw) sw.focus();
     }
 
     function setBusy(v) {
@@ -471,6 +696,37 @@
       if (messages[messages.length - 1].role === 'assistant') refreshPanel();
     }
 
+    function applyNotes(list) {
+      notes = list || [];
+      notes.forEach(n => { if (n.isNew) newNoteIds.add(n.id); });
+      const fresh = notes.filter(n => newNoteIds.has(n.id)).length;
+      if (fresh && !banner.dataset.dismissed) {
+        banner.innerHTML = `<span class="nb-icon" aria-hidden="true">${CAP}</span><span>${fresh === 1 ? 'You have a new note' : `You have ${fresh} new notes`} from ${escapeHtml(instructorName)} about an earlier conversation.</span><button class="nb-btn" id="nb-view">View</button>`;
+        banner.hidden = false;
+        document.getElementById('nb-view').onclick = () => {
+          banner.hidden = true; banner.dataset.dismissed = '1';
+          const card = document.getElementById('notes-card');
+          if (card) card.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        };
+      }
+    }
+
+    // Check every 45 seconds for notes the instructor posts while the student is here.
+    async function poll() {
+      if (busy || document.visibilityState !== 'visible') return;
+      try {
+        const data = await api('/api/session', { token });
+        if (busy) return;
+        const local = messages.filter(m => m.role !== 'error').length;
+        if ((data.transcript || []).length !== local) { messages = data.transcript; renderMessages(); }
+        const before = JSON.stringify(notes.map(n => n.id));
+        applyNotes(data.notes);
+        if (JSON.stringify(notes.map(n => n.id)) !== before) renderPanel();
+      } catch (e) {
+        if (e.status === 401) logoutStudent();
+      }
+    }
+
     document.getElementById('composer').onsubmit = e => { e.preventDefault(); send(input.value); };
     input.addEventListener('input', autoGrow);
     input.addEventListener('keydown', e => {
@@ -484,12 +740,16 @@
       messages = data.transcript || [];
       panel = data.panel;
       stats = data.stats || stats;
+      instructorName = data.instructorName || instructorName;
+      if (typeof data.shareTranscripts === 'boolean') shareTranscripts = data.shareTranscripts;
+      applyNotes(data.notes);
     } catch (e) {
       if (e.status === 401) return logoutStudent();
     }
     renderMessages();
     renderPanel();
     input.focus();
+    poller = setInterval(poll, 45000);
   }
 
   function logoutStudent() {
@@ -503,7 +763,7 @@
   // ---------- Instructor login ----------
   function renderInstructorLogin() {
     root.innerHTML = `
-      <header class="topbar"><div class="brand">Ceteris</div><button class="link-btn" id="back">← back</button></header>
+      <header class="topbar"><div class="brand">Ceteris</div><div class="topbar-tools">${themeSwitch()}<button class="link-btn" id="back">← back</button></div></header>
       <main class="gate">
         <form class="gate-card" id="login-form" novalidate>
           <h1>Instructor access</h1>
@@ -547,11 +807,11 @@
     root.innerHTML = `
       <header class="topbar">
         <div class="brand">Ceteris</div>
-        <div class="topbar-right"><span>Instructor</span><button class="link-btn" id="logout">Log out</button></div>
+        <div class="topbar-right"><span>Instructor</span>${themeSwitch()}<button class="link-btn" id="logout">Log out</button></div>
       </header>
       <main class="dash-wrap">
         <nav class="dash-tabs" role="tablist">
-          <button class="dash-tab" data-tab="daily" role="tab">Daily report</button>
+          <button class="dash-tab" data-tab="conversations" role="tab">Conversations</button>
           <button class="dash-tab" data-tab="usage" role="tab">Usage &amp; engagement</button>
           <button class="dash-tab" data-tab="roster" role="tab">Roster</button>
         </nav>
@@ -564,7 +824,7 @@
     };
     document.querySelectorAll('[data-tab]').forEach(b => b.onclick = () => showTab(b.dataset.tab));
     // First visit with an empty roster lands on the Roster tab so setup is obvious.
-    iapi('/api/roster').then(d => showTab(d.rows.length ? 'daily' : 'roster')).catch(() => showTab('daily'));
+    iapi('/api/roster').then(d => showTab(d.rows.length ? 'conversations' : 'roster')).catch(() => showTab('conversations'));
   }
 
   function showTab(tab) {
@@ -572,85 +832,266 @@
       b.classList.toggle('active', b.dataset.tab === tab);
       b.setAttribute('aria-selected', b.dataset.tab === tab);
     });
-    if (tab === 'daily') renderDaily();
+    if (tab === 'conversations') renderConversations();
     if (tab === 'usage') loadUsage();
     if (tab === 'roster') renderRoster();
   }
 
-  function renderDaily() {
+  // ---------- Conversations (discussion-board view) ----------
+  const convo = { range: '7', filter: '', threads: [] };
+
+  const fmtDay = day => new Date(day + 'T12:00:00').toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric' });
+  const fmtTime = iso => iso ? new Date(iso).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }) : '';
+  function fmtActivity(iso, day) {
+    if (!iso) return fmtDay(day);
+    const d = new Date(iso);
+    if (d.toDateString() === new Date().toDateString()) return 'today, ' + fmtTime(iso);
+    return d.toLocaleDateString([], { month: 'short', day: 'numeric' }) + ', ' + fmtTime(iso);
+  }
+  function initials(r) {
+    if (r.name) {
+      const parts = r.name.trim().split(/\s+/);
+      return (parts[0][0] + (parts.length > 1 ? parts[parts.length - 1][0] : '')).toUpperCase();
+    }
+    return r.studentId.slice(0, 2);
+  }
+  const firstNameOf = r => (r.name ? r.name.trim().split(/\s+/)[0] : r.studentId);
+  function truncate(s, n) {
+    s = String(s || '').replace(/\s+/g, ' ').trim();
+    return s.length > n ? s.slice(0, n - 1) + '…' : s;
+  }
+  // Title for a thread whose student shares only summaries: topics, never their own words.
+  function topicTitle(summary) {
+    const topics = (summary && summary.topics) || [];
+    if (!topics.length) return 'Conversation with Ceteris';
+    const t = topics.slice(0, 3);
+    const text = t.length > 1 ? t.slice(0, -1).join(', ') + ' and ' + t[t.length - 1] : t[0];
+    return text.charAt(0).toUpperCase() + text.slice(1);
+  }
+
+  function masteryPill(level) {
+    if (!level) return '<span class="mastery-pill mastery-pending">analysis pending</span>';
+    const cls = level === 'struggling' ? 'mastery-struggling' : level === 'solid' ? 'mastery-solid' : 'mastery-developing';
+    return `<span class="mastery-pill ${cls}">${escapeHtml(level)}</span>`;
+  }
+
+  function renderConversations() {
     const body = document.getElementById('dash-body');
     body.innerHTML = `
       <div class="dash-controls">
-        <label for="date-pick" class="dash-note">Viewing</label>
-        <input type="date" id="date-pick" value="${localToday()}" />
-        <span class="dash-note" id="refresh-note"></span>
+        <label class="sr-only" for="range">Time period</label>
+        <select id="range" class="select">
+          <option value="1">Today</option>
+          <option value="7">Last 7 days</option>
+          <option value="30">Last 30 days</option>
+          <option value="all">All conversations</option>
+        </select>
+        <label class="sr-only" for="filter">Filter by student</label>
+        <input id="filter" class="search" type="search" placeholder="Filter by student name or ID" value="${escapeHtml(convo.filter)}" />
+        <span class="dash-note" id="thread-count"></span>
         <button class="link-btn" id="refresh-btn">refresh</button>
       </div>
-      <div id="daily-body"><div class="empty-state">Loading class data…</div></div>`;
-    const pick = document.getElementById('date-pick');
-    pick.onchange = () => loadDaily(pick.value);
-    document.getElementById('refresh-btn').onclick = () => loadDaily(pick.value);
-    loadDaily(pick.value);
+      <div id="watch"></div>
+      <div id="thread-list"><div class="empty-state">Loading conversations…</div></div>`;
+    const range = document.getElementById('range');
+    range.value = convo.range;
+    range.onchange = () => { convo.range = range.value; loadThreads(); };
+    document.getElementById('filter').oninput = e => { convo.filter = e.target.value; renderThreadList(); };
+    document.getElementById('refresh-btn').onclick = loadThreads;
+    loadThreads();
   }
 
-  async function loadDaily(day) {
-    const body = document.getElementById('daily-body');
-    const note = document.getElementById('refresh-note');
-    body.innerHTML = `<div class="empty-state">Loading class data…</div>`;
-    let records;
-    try { records = (await iapi(`/api/dashboard?date=${encodeURIComponent(day)}`)).records || []; }
-    catch (e) { if (e.status !== 401) body.innerHTML = `<div class="empty-state">Couldn't reach the server. Try refresh.</div>`; return; }
-
-    note.textContent = `${records.length} student${records.length === 1 ? '' : 's'} active`;
-    if (records.length === 0) {
-      body.innerHTML = `<div class="empty-state">No sessions recorded for this date.<br>Students appear here once they've chatted with Ceteris.</div>`;
+  async function loadThreads() {
+    const list = document.getElementById('thread-list');
+    if (!list) return;
+    list.innerHTML = `<div class="empty-state">Loading conversations…</div>`;
+    try {
+      convo.threads = (await iapi(`/api/threads?range=${encodeURIComponent(convo.range)}`)).threads || [];
+    } catch (e) {
+      if (e.status !== 401) list.innerHTML = `<div class="empty-state">Couldn't reach the server. Try refresh.</div>`;
       return;
     }
-    const counts = {};
-    records.forEach(r => (r.summary.misconceptions || []).forEach(m => { counts[m] = (counts[m] || 0) + 1; }));
-    const top = Object.entries(counts).sort((a, b) => b[1] - a[1]).slice(0, 6);
-    const max = top.length ? top[0][1] : 1;
-
-    body.innerHTML = `
-      ${top.length ? `<div class="box"><h2>Class-wide watch areas</h2>
-        ${top.map(([m, c]) => `<div class="struggle-bar-row"><div class="struggle-bar-label">${escapeHtml(m)}</div>
-          <div class="struggle-bar-track"><div class="struggle-bar-fill" style="width:${(c / max) * 100}%"></div></div>
-          <div class="struggle-bar-count">${c}</div></div>`).join('')}</div>` : ''}
-      <div class="student-grid">
-        ${records.map(r => {
-          const s = r.summary;
-          const pill = s.masteryLevel === 'struggling' ? 'mastery-struggling' : s.masteryLevel === 'solid' ? 'mastery-solid' : 'mastery-developing';
-          return `<div class="student-card">
-            <div class="sname">${escapeHtml(displayName(r))}</div>
-            <div class="sid">${escapeHtml(r.studentId)}</div>
-            <span class="mastery-pill ${pill}">${escapeHtml(s.masteryLevel || 'developing')}</span>
-            <div class="small-label">Topics</div>
-            <div>${(s.topics || []).map(t => `<span class="topic-tag">${escapeHtml(t)}</span>`).join('') || '<span class="dash-note">—</span>'}</div>
-            ${(s.misconceptions || []).length ? `<div class="small-label">Flags</div>${s.misconceptions.map(m => `<div class="miscon-item">${escapeHtml(m)}</div>`).join('')}` : ''}
-            ${s.recommendedFollowUp ? `<div class="followup">${escapeHtml(s.recommendedFollowUp)}</div>` : ''}
-            <button class="history-btn" data-history="${escapeHtml(r.studentId)}">view history over time →</button>
-            <div class="history-panel" id="history-${escapeHtml(r.studentId)}" hidden></div>
-          </div>`;
-        }).join('')}
-      </div>`;
-    body.querySelectorAll('[data-history]').forEach(b => b.onclick = () => toggleHistory(b.dataset.history));
+    renderThreadList();
   }
 
-  async function toggleHistory(id) {
-    const panel = document.getElementById(`history-${id}`);
-    if (!panel.hidden) { panel.hidden = true; return; }
-    panel.hidden = false;
-    panel.innerHTML = `<div class="dash-note">Loading history…</div>`;
-    try {
-      const data = await iapi(`/api/student/${encodeURIComponent(id)}/history`);
-      const u = data.usage;
-      const usageLine = u ? `<div class="dash-note" style="margin-bottom:8px;">${u.messageCount} messages across ${u.daysActive.length} day${u.daysActive.length === 1 ? '' : 's'} · first ${escapeHtml(u.firstSeen)} · last ${escapeHtml(u.lastSeen)}</div>` : '';
-      panel.innerHTML = usageLine + (data.days.length ? data.days.map(d => `
-        <div class="history-day"><span class="hdate">${escapeHtml(d.date)}</span> — ${escapeHtml(d.summary.masteryLevel || 'developing')} · ${escapeHtml((d.summary.topics || []).join(', ') || 'no topics logged')}</div>`).join('')
-        : '<div class="dash-note">No earlier sessions.</div>');
-    } catch (e) {
-      if (e.status !== 401) panel.innerHTML = `<div class="dash-note">Couldn't load history.</div>`;
+  function renderThreadList() {
+    const list = document.getElementById('thread-list');
+    const watch = document.getElementById('watch');
+    const count = document.getElementById('thread-count');
+    if (!list) return;
+    const q = convo.filter.trim().toLowerCase();
+    const threads = convo.threads.filter(t => !q || (t.name || '').toLowerCase().includes(q) || t.studentId.toLowerCase().includes(q));
+    count.textContent = `${threads.length} conversation${threads.length === 1 ? '' : 's'}`;
+
+    const counts = {};
+    threads.forEach(t => (t.summary.misconceptions || []).forEach(m => { counts[m] = (counts[m] || 0) + 1; }));
+    const top = Object.entries(counts).sort((a, b) => b[1] - a[1]).slice(0, 5);
+    const max = top.length ? top[0][1] : 1;
+    watch.innerHTML = top.length ? `<details class="box watch-box"${convo.watchOpen === false ? '' : ' open'}>
+        <summary><h2>Watch areas in these conversations</h2></summary>
+        ${top.map(([m, c]) => `<div class="struggle-bar-row"><div class="struggle-bar-label">${escapeHtml(m)}</div>
+          <div class="struggle-bar-track"><div class="struggle-bar-fill" style="width:${(c / max) * 100}%"></div></div>
+          <div class="struggle-bar-count">${c}</div></div>`).join('')}
+      </details>` : '';
+    const det = watch.querySelector('details');
+    if (det) det.ontoggle = () => { convo.watchOpen = det.open; };
+
+    if (!threads.length) {
+      list.innerHTML = `<div class="empty-state">${q ? `No conversations match “${escapeHtml(convo.filter)}” in this period.` : 'No conversations in this period yet.'}</div>`;
+      return;
     }
+    list.innerHTML = `<ul class="thread-list">${threads.map(t => {
+      const flags = (t.summary.misconceptions || []).length;
+      const topics = (t.summary.topics || []).slice(0, 3);
+      return `<li><button class="thread-row" data-sid="${escapeHtml(t.studentId)}" data-day="${escapeHtml(t.day)}">
+        <span class="t-avatar" aria-hidden="true">${escapeHtml(initials(t))}</span>
+        <span class="t-main">
+          <span class="t-title">${t.shared ? (escapeHtml(truncate(t.title, 160)) || '<em>(no question)</em>') : `<span class="t-summary-title">${escapeHtml(topicTitle(t.summary))}</span>`}</span>
+          <span class="t-meta"><strong>${escapeHtml(t.name || t.studentId)}</strong> · <span class="mono">${escapeHtml(t.studentId)}</span> · ${escapeHtml(fmtDay(t.day))}</span>
+          ${topics.length ? `<span class="t-topics">${topics.map(x => `<span class="topic-tag">${escapeHtml(x)}</span>`).join('')}</span>` : ''}
+        </span>
+        <span class="t-side">
+          <span class="t-count">${t.studentMessages} question${t.studentMessages === 1 ? '' : 's'}</span>
+          <span class="t-badges">
+            ${t.shared ? '' : `<span class="badge badge-private">${LOCK} Summary only</span>`}
+            ${masteryPill(t.summary.masteryLevel)}
+            ${flags ? `<span class="badge badge-flag">${flags} flag${flags === 1 ? '' : 's'}</span>` : ''}
+            ${t.instructorNotes ? `<span class="badge badge-replied">${t.unseenNotes ? 'Your note · not seen yet' : 'You replied'}</span>` : ''}
+          </span>
+          <span class="t-time">${escapeHtml(fmtActivity(t.updatedAt, t.day))}</span>
+        </span>
+      </button></li>`;
+    }).join('')}</ul>`;
+    list.querySelectorAll('[data-sid]').forEach(b => b.onclick = () => openThread(b.dataset.sid, b.dataset.day));
+  }
+
+  async function openThread(sid, day) {
+    const body = document.getElementById('dash-body');
+    body.innerHTML = `<div class="empty-state">Loading conversation…</div>`;
+    try {
+      renderThread(await iapi(`/api/threads/${encodeURIComponent(sid)}/${encodeURIComponent(day)}`));
+      window.scrollTo(0, 0);
+    } catch (e) {
+      if (e.status !== 401) body.innerHTML = `<button class="link-btn back-link" id="back">← All conversations</button><div class="empty-state">${escapeHtml(e.message)}</div>`;
+      const back = document.getElementById('back');
+      if (back) back.onclick = renderConversations;
+    }
+  }
+
+  function renderPost(m, t) {
+    const time = fmtTime(m.at);
+    if (m.role === 'user') {
+      return `<li class="post post-user">
+        <div class="post-avatar" aria-hidden="true">${escapeHtml(initials(t))}</div>
+        <div class="post-card">
+          <div class="post-head"><span class="post-author">${escapeHtml(t.name || t.studentId)}</span><span class="post-tag">Student</span><span class="post-time">${time}</span></div>
+          <div class="post-body">${escapeHtml(m.content)}</div>
+        </div></li>`;
+    }
+    if (m.role === 'assistant') {
+      return `<li class="post post-assistant">
+        <div class="post-avatar" aria-hidden="true">C</div>
+        <div class="post-card">
+          <div class="post-head"><span class="post-author">Ceteris</span><span class="post-tag">Tutor</span><span class="post-time">${time}</span></div>
+          <div class="post-body md">${renderMarkdown(m.content)}</div>
+        </div></li>`;
+    }
+    if (m.role === 'instructor') {
+      return `<li class="post post-instructor">
+        <div class="post-avatar" aria-hidden="true">${CAP}</div>
+        <div class="post-card">
+          <div class="post-head"><span class="post-author">You</span><span class="post-tag">Note to ${escapeHtml(firstNameOf(t))}</span><span class="post-time">${time}</span></div>
+          <div class="post-body md">${renderMarkdown(m.content)}</div>
+          <div class="post-foot">
+            <span>${m.seen === false ? `Not seen by ${escapeHtml(firstNameOf(t))} yet` : `Seen by ${escapeHtml(firstNameOf(t))}`}</span>
+            ${m.id ? `<button class="remove-btn" data-del="${escapeHtml(m.id)}">Delete</button>` : ''}
+          </div>
+        </div></li>`;
+    }
+    return '';
+  }
+
+  function renderThread(t) {
+    const body = document.getElementById('dash-body');
+    const first = firstNameOf(t);
+    const s = t.summary || {};
+    const questions = t.questionCount;
+    const title = t.shared ? ((t.transcript.find(m => m.role === 'user') || {}).content || 'Conversation') : topicTitle(s);
+    const privateNotice = t.shared ? '' : `
+      <div class="private-notice">
+        <span class="pn-icon">${LOCK}</span>
+        <div><strong>${escapeHtml(first)} shares summaries only.</strong> You see Ceteris's read of this conversation, not ${escapeHtml(first)}'s words. Students can turn on full sharing from their chat; you can still post a note.</div>
+      </div>`;
+    body.innerHTML = `
+      <button class="link-btn back-link" id="back">← All conversations</button>
+      <div class="thread-layout">
+        <section class="thread-main" aria-label="Conversation">
+          <header class="thread-head">
+            <h2>${t.shared ? '' : `<span class="head-lock">${LOCK}</span>`}${escapeHtml(truncate(title, 160))}</h2>
+            <div class="t-meta">${escapeHtml(t.name || t.studentId)} · <span class="mono">${escapeHtml(t.studentId)}</span> · ${escapeHtml(fmtDay(t.day))} · ${questions} question${questions === 1 ? '' : 's'}</div>
+          </header>
+          ${privateNotice}
+          ${t.transcript.length ? `<ol class="posts">${t.transcript.map(m => renderPost(m, t)).join('')}</ol>` : ''}
+          <form class="reply-box" id="reply-form">
+            <label for="note">Add a note to ${escapeHtml(first)}'s conversation</label>
+            <textarea id="note" rows="4" placeholder="For example: Good question, we'll pick this up in Tuesday's lecture. Also see section 6.2."></textarea>
+            <div class="form-error" id="note-err" role="alert" hidden></div>
+            <div class="reply-foot">
+              <span class="dash-note">${escapeHtml(first)} sees your note the next time they open Ceteris, and Ceteris takes it into account.</span>
+              <button class="role-btn primary" type="submit" id="post-btn">Post note</button>
+            </div>
+          </form>
+        </section>
+        <aside class="thread-aside">
+          <div class="box">
+            <h3>Ceteris's read</h3>
+            ${masteryPill(s.masteryLevel)}
+            <div class="small-label">Topics</div>
+            <div>${(s.topics || []).map(x => `<span class="topic-tag">${escapeHtml(x)}</span>`).join('') || '<span class="dash-note">—</span>'}</div>
+            ${(s.misconceptions || []).length ? `<div class="small-label">Flags</div>${s.misconceptions.map(m => `<div class="miscon-item">${escapeHtml(m)}</div>`).join('')}` : ''}
+            ${s.recommendedFollowUp ? `<div class="followup">${escapeHtml(s.recommendedFollowUp)}</div>` : ''}
+            <button class="link-btn" id="all-of-student" style="margin-top:14px;">All of ${escapeHtml(first)}'s conversations →</button>
+          </div>
+        </aside>
+      </div>`;
+
+    document.getElementById('back').onclick = renderConversations;
+    document.getElementById('all-of-student').onclick = () => { convo.filter = t.studentId; convo.range = 'all'; renderConversations(); };
+
+    const form = document.getElementById('reply-form');
+    const note = document.getElementById('note');
+    const err = document.getElementById('note-err');
+    const btn = document.getElementById('post-btn');
+    form.onsubmit = async e => {
+      e.preventDefault();
+      if (!note.value.trim()) { err.textContent = 'Write a note first.'; err.hidden = false; return; }
+      btn.disabled = true; err.hidden = true;
+      try {
+        const updated = await iapi(`/api/threads/${encodeURIComponent(t.studentId)}/${encodeURIComponent(t.day)}/notes`, { method: 'POST', body: { text: note.value } });
+        renderThread(updated);
+        const posts = document.querySelectorAll('.post-instructor');
+        if (posts.length) posts[posts.length - 1].scrollIntoView({ block: 'center' });
+      } catch (ex) {
+        if (ex.status !== 401) { err.textContent = ex.message; err.hidden = false; btn.disabled = false; }
+      }
+    };
+    note.addEventListener('keydown', e => { if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) form.requestSubmit(); });
+
+    body.querySelectorAll('[data-del]').forEach(b => {
+      let timer;
+      b.onclick = async () => {
+        if (!b.classList.contains('confirm')) {
+          b.classList.add('confirm'); b.textContent = 'Confirm delete';
+          timer = setTimeout(() => { b.classList.remove('confirm'); b.textContent = 'Delete'; }, 4000);
+          return;
+        }
+        clearTimeout(timer);
+        b.disabled = true;
+        try {
+          renderThread(await iapi(`/api/threads/${encodeURIComponent(t.studentId)}/${encodeURIComponent(t.day)}/notes/${encodeURIComponent(b.dataset.del)}`, { method: 'DELETE' }));
+        } catch (ex) { b.disabled = false; }
+      };
+    });
   }
 
   async function loadUsage() {
@@ -665,13 +1106,19 @@
     body.innerHTML = `
       <p class="dash-note" style="margin:0 0 12px;">${rows.length} on the roster · ${rows.length - never} have used Ceteris · ${never} haven't yet</p>
       <div class="table-scroll"><table class="data-table">
-        <thead><tr><th>Student</th><th>ID</th><th>Messages</th><th>Days active</th><th>First used</th><th>Last used</th></tr></thead>
+        <thead><tr><th>Student</th><th>ID</th><th>Shares</th><th>Messages</th><th>Days active</th><th>First used</th><th>Last used</th></tr></thead>
         <tbody>${rows.map(r => `<tr>
-          <td>${escapeHtml(displayName(r))}</td><td class="mono">${escapeHtml(r.studentId)}</td>
+          <td>${r.messageCount ? `<button class="link-btn plain" data-convos="${escapeHtml(r.studentId)}">${escapeHtml(displayName(r))}</button>` : escapeHtml(displayName(r))}</td><td class="mono">${escapeHtml(r.studentId)}</td>
+          <td class="${r.shareTranscripts ? '' : 'muted'}">${r.shareTranscripts ? 'Full conversations' : 'Summaries only'}</td>
           <td>${r.messageCount}</td><td>${r.daysActive}</td>
           <td class="${r.firstSeen ? '' : 'muted'}">${escapeHtml(r.firstSeen || 'not yet')}</td>
           <td class="${r.lastSeen ? '' : 'muted'}">${escapeHtml(r.lastSeen || '—')}</td></tr>`).join('')}
-        </tbody></table></div>`;
+        </tbody></table></div>
+      <p class="dash-note" style="margin-top:10px;">Click a name to read that student's conversations.</p>`;
+    body.querySelectorAll('[data-convos]').forEach(b => b.onclick = () => {
+      convo.filter = b.dataset.convos; convo.range = 'all';
+      showTab('conversations');
+    });
   }
 
   async function renderRoster() {
