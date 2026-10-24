@@ -6,6 +6,8 @@ Runs as a small Node.js server so students only need the link — no Claude acco
 ## What's inside
 - `server.js` — Express backend. Holds your Anthropic API key privately, talks to Claude on the student's behalf, and reads/writes a Postgres database.
 - `public/index.html` — the frontend (student chat + instructor dashboard), served as static files.
+- `essays.js` — the in-class mini-essay writing coach (server side: tables, routes, the coach).
+- `public/essays-ui.js` and `public/essays.css` — the essay screens for students and the instructor's Essays tab.
 - Data (student roster, logins, transcripts, daily summaries, usage stats) lives in a **Postgres database**, not a local file — this is what makes reports permanent across server restarts.
 
 ## 1. Get an API key
@@ -59,12 +61,18 @@ Instead of storing a long-lived `ANTHROPIC_API_KEY` on Render, the server can au
 Local testing still uses an API key in `.env` (federation only works on Render, where the identity token exists). Once federation is confirmed working on Render, delete the old API key in the Console.
 
 ## Adding your students
-Students log in with their 6-character student ID (letters and/or digits, not case-sensitive). Only IDs on your roster can log in.
+Students log in with their 6-character student ID (letters and/or digits, not case-sensitive) and a password. Only IDs on your roster can log in.
 
 1. Open the app, click **I'm the instructor**, and log in. The first time, with an empty roster, the dashboard opens on the **Roster** tab.
 2. Paste one student per line: the ID, optionally followed by a comma and the name (`A1B2C3, Jordan Lee`). Two columns copied straight from a spreadsheet also work. Lines without a valid ID (like a header row) are skipped and listed so you can check them.
 3. Click **Add to roster**. Pasting an ID that's already there only updates the name, so you can re-paste the full list anytime.
 4. **Remove** ends a student's access immediately; their past sessions stay in your reports.
+
+**Passwords**: the first time a student logs in, Ceteris asks them to create a password (at least 8 characters, not their student ID). After that they log in with their ID and password. Only a salted hash of the password is stored, so nobody, including you, can read it.
+- **Forgotten password**: on the **Roster** tab, click **Reset password** next to the student (then confirm). It logs them out everywhere, and the next time they log in they create a new password. Until they do, anyone who knows their ID could set it, so reset only when they ask and tell them to log in right away.
+- The Roster tab shows whether each student has set a password yet. If a student finds their ID already has a password they never set, reset it.
+- Eight wrong passwords for one ID pause logins for that ID for 15 minutes (a reset clears the pause).
+- When you first deploy this version, students who were already logged in are asked to log in again and create a password.
 
 Students stay logged in on their device until they click **Log out**, so remind them to log out on shared lab computers.
 
@@ -77,7 +85,33 @@ Students stay logged in on their device until they click **Log out**, so remind 
 - **Chiming in**: at the bottom of any conversation, write a note (Markdown works; Cmd/Ctrl + Enter posts it). The student sees it in their chat, or, for an earlier day's conversation, in a "From your instructor" box with a banner the next time they open Ceteris. Ceteris also reads your note and treats it as course guidance, so it can build on it if the student follows up. Each note shows whether the student has seen it, and you can delete a note.
 - **Usage & engagement tab**: messages, days active, and first/last use for everyone on the roster, including students who haven't tried it yet.
 - **Roster tab**: add and remove student IDs.
+- **Essays tab**: in-class mini-essays with a writing coach (see below).
 - **Dark mode**: a moon/sun switch in every header. It starts out matching the device's own light/dark setting and remembers each person's choice on that device. The dark theme uses the official blue as its main surface with gold accents; its darker blues are shades of the official blue (mixed with black).
+
+## In-class mini-essays
+Students write a short essay inside Ceteris during class, guided through planning stages by a writing coach that asks questions but never writes for them. Whatever they've written is submitted automatically at the end time.
+
+**Setting one up** (instructor dashboard → **Essays**):
+1. The first essay, "Airbnb taxes and housing," is already loaded with its stages, rubric, bonus and private brief. It stays hidden from students until you give it a time.
+2. Click **Edit** (or **New essay**) and set the date, start and end time. Your computer's time zone is used. Check the planning stages (title, minutes, task, guiding question), drafting and checking minutes, and target length.
+3. **Rubric**: students see only the criterion names and weights (so the descriptions can't give the answer away); the coach sees everything. The **bonus** is never shown to students, and the coach never prompts for it.
+4. **Private brief**: notes only the coach reads (the logic you expect, what sets the size of the effect, weak spots to probe).
+5. **Writing coach** on/off: with it off, students plan, draft and check on their own.
+
+**What students see**: while an essay is open, a banner in their Ceteris chat says "In-class essay open now" with a Start button. Before starting, a short screen tells them what you will see (plan, essay, draft history, coach conversation), that paste is off, that work submits automatically at the end, and that a dead device means finishing on paper. Then:
+- Planning stages, one at a time, with the task and guiding question. Drafting unlocks once every stage has notes.
+- A draft editor with bold, italic and underline, a word count against the target, and their plan alongside.
+- A Check step: the rubric criteria as a private checklist, a preview of the essay, and a two-step Submit.
+- A countdown that stays pinned at the top of the essay screen (from the server's clock), a bar showing how far through the session they are, and a "Suggested now" step based on the stage minutes; warnings at 5 minutes and 1 minute. The countdown also shows on the chat banner and on the start screen, and on your Submissions page while the essay is open.
+- Autosave as they type (and every 10 seconds while offline, until it reconnects). Paste and drag-and-drop are blocked everywhere on the essay screen, with one exception: text copied from one of their own plan notes can be pasted into the essay (as plain text). Since paste is also blocked in the plan boxes, everything in the plan was typed by the student. Each such paste is recorded.
+- The coach panel beside the essay (a Write | Coach switch on tablets). One example phrasing per paper, only for a sentence that stays unintelligible after the coach asks what the student meant; it can't be selected or copied. If the API is busy, the server retries and the student just sees "thinking…" a little longer.
+- After submitting (or at the end time), a read-only copy of their plan and essay, also listed later under "Your in-class essays" in the chat's side panel.
+
+While an essay is open and a student hasn't submitted, the regular tutoring chat is paused for that student, so it can't be used to write the essay.
+
+**Reading submissions**: **Submissions** shows every student on the roster (not started, writing, submitted, submitted automatically) with plan progress, word count and how many questions they asked the coach. It refreshes every 20 seconds while the essay is open. The Words column notes how many words came from the plan. Click a name to read the paper: the essay (with how many of its words were pasted from the plan, and each paste listed), the plan, the full coach conversation (with stage and time), and the rubric with its strong/weak descriptions alongside for grading. **Previous/Next student** steps through papers, and **Print** prints a clean copy (in light colors even in dark mode).
+
+**Details**: autosaves that arrive up to 90 seconds after the end time still count (for a slow connection), then everything still in progress is submitted automatically. A snapshot of the draft is kept about every 30 seconds for the draft history. Each student can ask the coach up to 60 questions per essay. An essay can be deleted only before any student has started it; **Duplicate** copies one (without its time) for another section.
 
 ## Student privacy: summaries by default
 Each student decides what you see, with a switch in their chat's side panel: **Share full conversations with [you]**. It is **off by default**.
@@ -93,7 +127,7 @@ The switch controls what the app shows you. Full conversations are still stored 
 
 ## Before rolling out to a full class
 - **Tell students about the sharing switch.** It's off by default and explained in the chat's side panel, but a word in class or on the syllabus helps students make an informed choice, especially if you'd like them to opt in.
-- Logging in needs only a student ID, so anyone who knows a classmate's ID could log in as them. Repeated failed logins from one network are slowed down, but treat IDs as semi-private and don't base grades on the dashboard alone.
+- Each student's first login sets their password, so ask students to log in early in the term (before anyone else could claim their ID). Repeated failed logins are slowed down.
 - Misconception detection depends on the model's read of the conversation — treat the dashboard as a helpful signal, not a grade.
 
 ## Planned: levels and progression (not built yet)

@@ -12,11 +12,16 @@
   })();
 </script>
 <title>Ceteris</title>
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
+<link rel="icon" href="/favicon-32.png" type="image/png" sizes="32x32">
+<link rel="apple-touch-icon" href="/apple-touch-icon.png">
+<meta name="theme-color" content="#112E51">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Lora:ital,wght@0,500;0,600;1,500&family=IBM+Plex+Sans:ital,wght@0,400;0,500;0,600;1,400&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
 <script src="/vendor/marked.js"></script>
 <script src="/vendor/purify.js"></script>
+<script src="/essays-ui.js"></script>
 <style>
   :root {
     /* Official university colors, exact values */
@@ -85,6 +90,15 @@
   .id-input:focus, .pw-input:focus { outline: none; border-color: var(--focus); box-shadow: 0 0 0 4px var(--accent-strong); }
   .form-error { color: var(--error); background: var(--error-soft); font-size: 13.5px; border-radius: 6px; padding: 8px 12px; margin: -2px 0 14px; text-align: left; }
   .fine { font-size: 12.5px !important; margin-top: 18px !important; }
+  .form-note { font-size: 13.5px; background: var(--accent-bg); border: 1px solid var(--accent-strong); border-radius: 6px; padding: 8px 12px; margin: 0 0 14px; text-align: left; }
+  .sid-chip { display: flex; align-items: center; justify-content: center; gap: 12px; margin: 18px 0 4px; }
+  .sid-chip .mono { font-size: 20px; letter-spacing: .25em; font-weight: 500; }
+  .pw-field { position: relative; text-align: left; margin-top: 14px; }
+  .pw-label { display: block; font-size: 13px; font-weight: 600; margin-bottom: 6px; }
+  .pw-field .pw-input { margin: 0; padding-right: 70px; }
+  .pw-toggle { position: absolute; right: 8px; bottom: 9px; font-family: var(--font-mono); font-size: 11.5px; padding: 5px 9px; border: 1px solid var(--line); border-radius: 6px; background: var(--surface-2); color: var(--ink); cursor: pointer; }
+  .pw-help { font-size: 12.5px !important; text-align: left; margin: 10px 0 14px !important; }
+  .gate-card .pw-field + .form-error, .gate-card .pw-field + .form-note, .gate-card .pw-field + .role-btn { margin-top: 16px; }
 
   /* ---------- Student layout ---------- */
   .student-main { display: grid; grid-template-columns: minmax(0, 1fr) 310px; gap: 20px; max-width: 1150px; margin: 0 auto; padding: 20px; height: calc(100vh - 60px); height: calc(100dvh - 60px); }
@@ -330,6 +344,8 @@
   .roster-result { font-size: 13px; color: var(--ink-soft); margin-top: 12px; }
   .roster-result .warn { color: var(--error); }
   .remove-btn { font-family: var(--font-mono); font-size: 11px; background: none; border: 1px solid var(--line); border-radius: 4px; padding: 3px 8px; color: var(--ink-soft); cursor: pointer; }
+  .roster-btns { text-align: right; white-space: nowrap; }
+  .roster-btns .remove-btn + .remove-btn { margin-left: 6px; }
   .remove-btn.confirm { border-color: var(--error); color: #fff; background: var(--error); }
   .empty-state { text-align: center; padding: 56px 20px; color: var(--ink-soft); font-family: var(--font-mono); font-size: 13px; }
 
@@ -370,6 +386,7 @@
   .landing-theme { position: absolute; top: 18px; right: 20px; }
   .topbar-tools { display: flex; align-items: center; gap: 16px; }
 </style>
+<link rel="stylesheet" href="/essays.css">
 </head>
 <body>
 <div id="app"></div>
@@ -458,13 +475,16 @@
     });
   }
 
+  let viewCleanup = null; // set by screens that run timers (the essay screen)
   function go(view) {
     if (poller) { clearInterval(poller); poller = null; }
+    if (viewCleanup) { const c = viewCleanup; viewCleanup = null; try { c(); } catch (e) {} }
     state.view = view; render();
   }
   function render() {
     ({ 'landing': renderLanding, 'student-login': renderStudentLogin, 'student-chat': renderStudentChat,
-       'instructor-login': renderInstructorLogin, 'instructor': renderInstructor })[state.view]();
+       'instructor-login': renderInstructorLogin, 'instructor': renderInstructor,
+       'student-essay': () => Essays.renderStudentEssay() })[state.view]();
     bindThemeSwitches();
   }
 
@@ -489,40 +509,106 @@
   }
 
   // ---------- Student login ----------
-  function renderStudentLogin() {
+  // Student login, in steps: the ID, then either the password or (first time, or after
+  // the instructor resets it) creating one.
+  function renderStudentLogin(step, sid, notice) {
+    step = step || 'id';
+    const title = step === 'create' ? 'Create your password' : step === 'password' ? 'Welcome back' : 'Welcome to Ceteris';
+    const lead = step === 'create'
+      ? 'First time here (or your password was reset). Choose a password for your account.'
+      : step === 'password' ? 'Enter your password.' : 'Enter your 6-character student ID.';
     root.innerHTML = `
       <header class="topbar"><div class="brand">Ceteris</div><div class="topbar-tools">${themeSwitch()}<button class="link-btn" id="back">← back</button></div></header>
       <main class="gate">
         <form class="gate-card" id="login-form" novalidate>
-          <h1>Welcome to Ceteris</h1>
-          <p>Enter your 6-character student ID.</p>
-          <label for="sid" class="sr-only">Student ID</label>
-          <input id="sid" class="id-input" maxlength="6" autocomplete="off" autocapitalize="characters" spellcheck="false" placeholder="······" />
+          <h1>${title}</h1>
+          <p>${lead}</p>
+          ${step === 'id' ? `
+            <label for="sid" class="sr-only">Student ID</label>
+            <input id="sid" class="id-input" maxlength="6" autocomplete="username" autocapitalize="characters" spellcheck="false" placeholder="······" />`
+          : `
+            <div class="sid-chip"><span class="mono">${escapeHtml(sid)}</span><button type="button" class="link-btn plain" id="not-me">Not you?</button></div>
+            <input type="text" class="sr-only" autocomplete="username" value="${escapeHtml(sid)}" tabindex="-1" aria-hidden="true" readonly>
+            <div class="pw-field">
+              <label for="pw" class="pw-label">${step === 'create' ? 'New password' : 'Password'}</label>
+              <input id="pw" class="pw-input" type="password" autocomplete="${step === 'create' ? 'new-password' : 'current-password'}" maxlength="200" />
+              <button type="button" class="pw-toggle" id="pw-toggle" aria-label="Show password" aria-pressed="false">Show</button>
+            </div>
+            ${step === 'create' ? `
+              <div class="pw-field">
+                <label for="pw2" class="pw-label">Type it again</label>
+                <input id="pw2" class="pw-input" type="password" autocomplete="new-password" maxlength="200" />
+              </div>
+              <p class="pw-help">At least 8 characters, and not your student ID. Keep it to yourself: it protects your conversations and essays. If you forget it, your instructor can reset it.</p>` : ''}`}
+          ${notice ? `<div class="form-note" role="status">${escapeHtml(notice)}</div>` : ''}
           <div class="form-error" id="err" role="alert" hidden></div>
-          <button class="role-btn primary full" id="go" type="submit">Start session</button>
-          <p class="fine">By default your instructor sees only a summary of your conversations, not your words. You can choose to share full conversations once you're in.</p>
+          <button class="role-btn primary full" id="go" type="submit">${step === 'id' ? 'Continue' : step === 'create' ? 'Create password and start' : 'Log in'}</button>
+          ${step === 'password' ? '<p class="fine">Forgot your password? Ask your instructor to reset it, and you’ll create a new one here.</p>' : ''}
+          ${step === 'id' ? `<p class="fine">By default your instructor sees only a summary of your conversations, not your words. You can choose to share full conversations once you're in.</p>` : ''}
         </form>
       </main>`;
-    const input = document.getElementById('sid');
     const err = document.getElementById('err');
     const btn = document.getElementById('go');
-    input.focus();
-    input.addEventListener('input', () => { input.value = input.value.toUpperCase().replace(/[^A-Z0-9]/g, ''); err.hidden = true; });
-    document.getElementById('back').onclick = () => go('landing');
+    const showErr = msg => { err.textContent = msg; err.hidden = false; btn.disabled = false; };
+    bindThemeSwitches();
+    document.getElementById('back').onclick = () => step === 'id' ? go('landing') : renderStudentLogin('id');
+    const finish = data => {
+      store.set(STUDENT_KEY, data.token);
+      state.student = { studentId: data.studentId, name: data.name };
+      go('student-chat');
+    };
+
+    if (step === 'id') {
+      const input = document.getElementById('sid');
+      input.focus();
+      input.addEventListener('input', () => { input.value = input.value.toUpperCase().replace(/[^A-Z0-9]/g, ''); err.hidden = true; });
+      document.getElementById('login-form').onsubmit = async e => {
+        e.preventDefault();
+        const studentId = input.value.trim();
+        if (studentId.length !== 6) return showErr('Student IDs are 6 letters or digits.');
+        btn.disabled = true;
+        try {
+          const data = await api('/api/student-login', { method: 'POST', body: { studentId } });
+          if (data.token) return finish(data);
+          renderStudentLogin(data.needsNewPassword ? 'create' : 'password', studentId);
+        } catch (ex) { showErr(ex.message); }
+      };
+      return;
+    }
+
+    const pw = document.getElementById('pw'), pw2 = document.getElementById('pw2');
+    pw.focus();
+    document.getElementById('not-me').onclick = () => renderStudentLogin('id');
+    const toggle = document.getElementById('pw-toggle');
+    toggle.onclick = () => {
+      const show = pw.type === 'password';
+      [pw, pw2].forEach(x => { if (x) x.type = show ? 'text' : 'password'; });
+      toggle.textContent = show ? 'Hide' : 'Show';
+      toggle.setAttribute('aria-pressed', show); toggle.setAttribute('aria-label', show ? 'Hide password' : 'Show password');
+    };
+    [pw, pw2].forEach(x => x && x.addEventListener('input', () => { err.hidden = true; }));
     document.getElementById('login-form').onsubmit = async e => {
       e.preventDefault();
-      const studentId = input.value.trim();
-      if (studentId.length !== 6) { err.textContent = 'Student IDs are 6 letters or digits.'; err.hidden = false; return; }
+      const body = { studentId: sid };
+      if (step === 'create') {
+        if (pw.value.length < 8) return showErr('Choose a password of at least 8 characters.');
+        if (pw.value !== pw2.value) return showErr('The two passwords don’t match. Type them again.');
+        body.newPassword = pw.value;
+      } else {
+        if (!pw.value) return showErr('Enter your password.');
+        body.password = pw.value;
+      }
       btn.disabled = true;
       try {
-        const data = await api('/api/student-login', { method: 'POST', body: { studentId } });
-        store.set(STUDENT_KEY, data.token);
-        state.student = { studentId: data.studentId, name: data.name };
-        go('student-chat');
+        const data = await api('/api/student-login', { method: 'POST', body });
+        if (data.token) return finish(data);
+        // The account changed state in between (for example, the instructor just reset it).
+        renderStudentLogin(data.needsNewPassword ? 'create' : 'password', sid,
+          data.needsNewPassword ? 'Your password was reset. Create a new one.' : null);
       } catch (ex) {
-        err.textContent = ex.message;
-        err.hidden = false;
-        btn.disabled = false;
+        if (ex.status === 409) return renderStudentLogin('password', sid, ex.message);
+        showErr(ex.message);
+        pw.select();
       }
     };
   }
@@ -549,6 +635,7 @@
       </header>
       <main class="student-main">
         <section class="chat-panel" aria-label="Conversation">
+          <div id="essay-banner" hidden></div>
           <div class="note-banner" id="note-banner" hidden></div>
           <div class="chat-scroll" id="chat-scroll" role="log" aria-live="polite"></div>
           <form class="composer" id="composer">
@@ -558,7 +645,7 @@
           </form>
           <div class="composer-hint">Enter to send · Shift + Enter for a new line</div>
         </section>
-        <aside class="side-panel" id="side-panel" aria-label="Today's session"></aside>
+        <aside class="side-panel" aria-label="Today's session"><div id="essay-card"></div><div id="side-panel"></div></aside>
       </main>`;
 
     const scroll = document.getElementById('chat-scroll');
@@ -689,7 +776,8 @@
         stats.questionsToday += 1;
       } catch (e) {
         if (e.status === 401) return logoutStudent();
-        messages.push({ role: 'error', content: e.message + ' Your question is still above, so you can send it again.' });
+        messages.push({ role: 'error', content: e.message + (e.status === 423 ? '' : ' Your question is still above, so you can send it again.') });
+        if (e.status === 423) loadEssays();
       }
       setBusy(false);
       input.focus();
@@ -712,8 +800,11 @@
     }
 
     // Check every 45 seconds for notes the instructor posts while the student is here.
+    const loadEssays = () => Essays.loadStudentHome(document.getElementById('essay-banner'), document.getElementById('essay-card'));
     async function poll() {
-      if (busy || document.visibilityState !== 'visible') return;
+      if (document.visibilityState !== 'visible') return;
+      loadEssays();
+      if (busy) return;
       try {
         const data = await api('/api/session', { token });
         if (busy) return;
@@ -735,6 +826,7 @@
 
     renderMessages();
     renderPanel();
+    loadEssays();
     try {
       const data = await api('/api/session', { token });
       messages = data.transcript || [];
@@ -812,6 +904,7 @@
       <main class="dash-wrap">
         <nav class="dash-tabs" role="tablist">
           <button class="dash-tab" data-tab="conversations" role="tab">Conversations</button>
+          <button class="dash-tab" data-tab="essays" role="tab">Essays</button>
           <button class="dash-tab" data-tab="usage" role="tab">Usage &amp; engagement</button>
           <button class="dash-tab" data-tab="roster" role="tab">Roster</button>
         </nav>
@@ -835,6 +928,7 @@
     if (tab === 'conversations') renderConversations();
     if (tab === 'usage') loadUsage();
     if (tab === 'roster') renderRoster();
+    if (tab === 'essays') Essays.renderInstructorEssays();
   }
 
   // ---------- Conversations (discussion-board view) ----------
@@ -1173,14 +1267,29 @@
     list.innerHTML = `
       <h2 style="font-size:18px;margin:0 0 12px;">Roster <span class="dash-note">(${rows.length})</span></h2>
       <div class="table-scroll"><table class="data-table">
-        <thead><tr><th>ID</th><th>Name</th><th>Last active</th><th><span class="sr-only">Actions</span></th></tr></thead>
+        <thead><tr><th>ID</th><th>Name</th><th>Password</th><th>Last active</th><th><span class="sr-only">Actions</span></th></tr></thead>
         <tbody>${rows.map(r => `<tr>
           <td class="mono">${escapeHtml(r.studentId)}</td>
           <td class="${r.name ? '' : 'muted'}">${escapeHtml(r.name || 'no name')}</td>
+          <td class="${r.passwordSetAt ? '' : 'muted'}">${r.passwordSetAt ? 'Set ' + escapeHtml(new Date(r.passwordSetAt).toLocaleDateString([], { month: 'short', day: 'numeric' })) : 'Not yet'}</td>
           <td class="${r.lastSeen ? '' : 'muted'}">${escapeHtml(r.lastSeen || 'never')}</td>
-          <td style="text-align:right;"><button class="remove-btn" data-remove="${escapeHtml(r.studentId)}">Remove</button></td></tr>`).join('')}
+          <td class="roster-btns">${r.passwordSetAt ? `<button class="remove-btn" data-reset="${escapeHtml(r.studentId)}">Reset password</button>` : ''}<button class="remove-btn" data-remove="${escapeHtml(r.studentId)}">Remove</button></td></tr>`).join('')}
         </tbody></table></div>
-      <p class="dash-note" style="margin-top:10px;">Removing a student ends their access right away. Their past sessions stay in your reports.</p>`;
+      <p class="dash-note" style="margin-top:10px;">Students create a password the first time they log in. <strong>Reset password</strong> logs the student out everywhere; they create a new password the next time they log in, so reset only when they ask, and tell them to log in soon. Removing a student ends their access right away; their past sessions stay in your reports.</p>`;
+    list.querySelectorAll('[data-reset]').forEach(b => {
+      let timer;
+      b.onclick = async () => {
+        if (!b.classList.contains('confirm')) {
+          b.classList.add('confirm'); b.textContent = 'Confirm reset';
+          timer = setTimeout(() => { b.classList.remove('confirm'); b.textContent = 'Reset password'; }, 4000);
+          return;
+        }
+        clearTimeout(timer);
+        b.disabled = true;
+        try { await iapi(`/api/roster/${encodeURIComponent(b.dataset.reset)}/reset-password`, { method: 'POST' }); loadRosterList(); }
+        catch (e) { b.disabled = false; }
+      };
+    });
     list.querySelectorAll('[data-remove]').forEach(b => {
       let timer;
       b.onclick = async () => {
@@ -1196,6 +1305,14 @@
       };
     });
   }
+
+  // ---------- Mini-essays (essays-ui.js) ----------
+  const Essays = window.CeterisEssays({
+    api, iapi, escapeHtml, renderMarkdown, store, STUDENT_KEY, INSTRUCTOR_KEY, state, root, go, render,
+    themeSwitch, bindThemeSwitches, logoutStudent, displayName,
+    setCleanup: fn => { viewCleanup = fn; },
+    icons: { ARROW, SEND, CHECK, CAP, LOCK }
+  });
 
   // ---------- Start ----------
   (async function start() {

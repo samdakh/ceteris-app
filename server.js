@@ -61,6 +61,9 @@ async function initDB() {
     ALTER TABLE transcripts ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ;
     -- Each student decides whether the instructor may read full conversations. Off by default.
     ALTER TABLE roster ADD COLUMN IF NOT EXISTS share_transcripts BOOLEAN NOT NULL DEFAULT false;
+    -- Each student creates a password at first login; the instructor can reset it (back to NULL).
+    ALTER TABLE roster ADD COLUMN IF NOT EXISTS password_hash TEXT;
+    ALTER TABLE roster ADD COLUMN IF NOT EXISTS password_set_at TIMESTAMPTZ;
   `);
   await pool.query('DELETE FROM auth_sessions WHERE expires_at < now()');
 }
@@ -100,6 +103,30 @@ function normalizeId(raw) {
   return String(raw || '').trim().toUpperCase();
 }
 
+// --- Student passwords (scrypt, salted; only the hash is stored) -------------------
+const MIN_PASSWORD = 8;
+function hashPassword(password) {
+  return new Promise((resolve, reject) => {
+    const salt = crypto.randomBytes(16);
+    crypto.scrypt(password, salt, 64, (err, key) => err ? reject(err) : resolve(`scrypt$${salt.toString('hex')}$${key.toString('hex')}`));
+  });
+}
+function checkPassword(password, stored) {
+  return new Promise(resolve => {
+    const [kind, saltHex, keyHex] = String(stored || '').split('$');
+    if (kind !== 'scrypt' || !saltHex || !keyHex) return resolve(false);
+    const expected = Buffer.from(keyHex, 'hex');
+    crypto.scrypt(password, Buffer.from(saltHex, 'hex'), expected.length, (err, key) =>
+      resolve(!err && key.length === expected.length && crypto.timingSafeEqual(key, expected)));
+  });
+}
+function passwordProblem(pw, studentId) {
+  if (typeof pw !== 'string' || pw.length < MIN_PASSWORD) return `Choose a password of at least ${MIN_PASSWORD} characters.`;
+  if (pw.length > 200) return 'That password is too long.';
+  if (pw.toUpperCase().includes(studentId) || /^(.)\1+$/.test(pw) || /^(password|12345678|123456789|qwertyui)/i.test(pw)) return 'Choose a password that is harder to guess (not your student ID).';
+  return null;
+}
+
 // --- Sessions (stored in the database so logins survive server restarts) --------
 function hashToken(token) {
   return crypto.createHash('sha256').update(token).digest('hex');
@@ -128,7 +155,7 @@ async function requireStudent(req, res, next) {
     const result = await pool.query(
       `SELECT r.student_id, r.name, r.share_transcripts FROM auth_sessions s
        JOIN roster r ON r.student_id = s.student_id
-       WHERE s.token_hash = $1 AND s.role = 'student' AND s.expires_at > now()`,
+       WHERE s.token_hash = $1 AND s.role = 'student' AND s.expires_at > now() AND r.password_hash IS NOT NULL`,
       [hashToken(token)]
     );
     if (!result.rows[0]) return res.status(401).json({ error: 'Your session has ended. Please log in again.' });
@@ -165,6 +192,20 @@ function tooManyFailures(ip) {
   if (!entry) return false;
   if (Date.now() > entry.resetAt) { failedLogins.delete(ip); return false; }
   return entry.count >= MAX_FAILED_LOGINS;
+}
+// Separately, 8 wrong passwords for one student ID in 15 minutes pauses that ID (from any network).
+const MAX_FAILED_PER_ID = 8;
+const failedById = new Map();
+function idLocked(id) {
+  const entry = failedById.get(id);
+  if (!entry) return false;
+  if (Date.now() > entry.resetAt) { failedById.delete(id); return false; }
+  return entry.count >= MAX_FAILED_PER_ID;
+}
+function recordIdFailure(id) {
+  const entry = failedById.get(id);
+  if (!entry || Date.now() > entry.resetAt) failedById.set(id, { count: 1, resetAt: Date.now() + 15 * 60 * 1000 });
+  else entry.count += 1;
 }
 function recordFailure(ip) {
   const entry = failedLogins.get(ip);
@@ -211,7 +252,9 @@ Fields shown to the STUDENT, so keep them warm, specific, and free of any gradin
 
 // The official SDK resolves credentials on its own: an explicit ANTHROPIC_API_KEY first,
 // then the Workload Identity Federation variables. See README.
-const client = new Anthropic();
+// maxRetries: when a whole class asks at once and the API answers "too many requests"
+// (429) or "overloaded" (529), the SDK waits as the API asks and retries before giving up.
+const client = new Anthropic({ maxRetries: 4 });
 
 async function callAnthropic(system, messages, maxTokens) {
   const message = await client.messages.create({
@@ -358,14 +401,37 @@ app.post('/api/student-login', async (req, res) => {
     // Not counted toward the lockout: a malformed ID can't be a successful guess anyway.
     return res.status(400).json({ error: 'Student IDs are 6 letters or digits. Check yours and try again.' });
   }
+  // Two steps: the ID alone tells the page which password box to show; then the password.
+  const password = req.body && req.body.password;
+  const newPassword = req.body && req.body.newPassword;
   try {
-    const r = await pool.query('SELECT student_id, name FROM roster WHERE student_id=$1', [studentId]);
-    if (!r.rows[0]) {
+    const r = await pool.query('SELECT student_id, name, password_hash FROM roster WHERE student_id=$1', [studentId]);
+    const row = r.rows[0];
+    if (!row) {
       recordFailure(req.ip);
       return res.status(401).json({ error: "That ID isn't on the class roster. Check it, or ask your instructor to add you." });
     }
+    if (idLocked(studentId)) {
+      return res.status(429).json({ error: 'Too many wrong passwords for this ID. Wait 15 minutes, or ask your instructor to reset your password.' });
+    }
+    if (!row.password_hash) {
+      // First login (or after a reset): the student creates a password.
+      if (newPassword == null || newPassword === '') return res.json({ needsNewPassword: true });
+      const problem = passwordProblem(newPassword, studentId);
+      if (problem) return res.status(400).json({ error: problem, needsNewPassword: true });
+      const set = await pool.query(`UPDATE roster SET password_hash=$2, password_set_at=now() WHERE student_id=$1 AND password_hash IS NULL`,
+        [studentId, await hashPassword(newPassword)]);
+      if (!set.rowCount) return res.status(409).json({ error: 'A password was just set for this ID. Log in with it.', needsPassword: true });
+    } else {
+      if (password == null || password === '') return res.json({ needsPassword: true });
+      if (!(await checkPassword(String(password), row.password_hash))) {
+        recordFailure(req.ip); recordIdFailure(studentId);
+        return res.status(401).json({ error: "That password doesn't match. If you've forgotten it, ask your instructor to reset it.", needsPassword: true });
+      }
+      failedById.delete(studentId);
+    }
     const token = await createSession('student', studentId, 120);
-    res.json({ token, studentId, name: r.rows[0].name });
+    res.json({ token, studentId, name: row.name });
   } catch (e) {
     console.error('Ceteris: student login failed —', e.message);
     res.status(500).json({ error: 'Login is unavailable right now. Please try again shortly.' });
@@ -427,6 +493,10 @@ app.post('/api/tutor', requireStudent, async (req, res) => {
   if (message.length > 4000) return res.status(400).json({ error: 'That message is too long. Try breaking it into smaller questions.' });
 
   try {
+    // During an in-class essay the tutor steps aside, so it can't write the essay for anyone.
+    const essayTitle = await essays.essayInProgress(studentId);
+    if (essayTitle) return res.status(423).json({ error: `The tutor is paused while your in-class essay ("${essayTitle}") is open. The essay's coach can help in the meantime, and the tutor is back as soon as you submit.`, essayOpen: true });
+
     const { day, transcript } = await loadToday(studentId);
     const question = { id: newId(), role: 'user', content: message, at: new Date().toISOString() };
 
@@ -516,11 +586,11 @@ app.post('/api/instructor-login', async (req, res) => {
 app.get('/api/roster', requireInstructor, async (req, res) => {
   try {
     const result = await pool.query(`
-      SELECT r.student_id, r.name, u.last_seen
+      SELECT r.student_id, r.name, r.password_set_at, u.last_seen
       FROM roster r LEFT JOIN usage_stats u ON u.student_id = r.student_id
       ORDER BY r.name NULLS LAST, r.student_id
     `);
-    res.json({ rows: result.rows.map(r => ({ studentId: r.student_id, name: r.name, lastSeen: r.last_seen })) });
+    res.json({ rows: result.rows.map(r => ({ studentId: r.student_id, name: r.name, lastSeen: r.last_seen, passwordSetAt: r.password_set_at })) });
   } catch (e) {
     console.error('Ceteris: roster fetch failed —', e.message);
     res.status(500).json({ error: 'Could not load the roster.' });
@@ -557,6 +627,22 @@ app.post('/api/roster', requireInstructor, async (req, res) => {
   } catch (e) {
     console.error('Ceteris: roster import failed —', e.message);
     res.status(500).json({ error: 'Could not save the roster.' });
+  }
+});
+
+// Password reset: the student creates a new password the next time they log in.
+// Their open sessions end too, in case someone else had their password.
+app.post('/api/roster/:studentId/reset-password', requireInstructor, async (req, res) => {
+  const id = normalizeId(req.params.studentId);
+  try {
+    const r = await pool.query('UPDATE roster SET password_hash=NULL, password_set_at=NULL WHERE student_id=$1', [id]);
+    if (!r.rowCount) return res.status(404).json({ error: 'That student is not on the roster.' });
+    await pool.query(`DELETE FROM auth_sessions WHERE role='student' AND student_id=$1`, [id]);
+    failedById.delete(id);
+    res.json({ ok: true });
+  } catch (e) {
+    console.error('Ceteris: password reset failed —', e.message);
+    res.status(500).json({ error: 'Could not reset that password.' });
   }
 });
 
@@ -734,8 +820,15 @@ app.delete('/api/threads/:studentId/:day/notes/:noteId', requireInstructor, asyn
   }
 });
 
+// --- In-class mini-essays (see essays.js) -----------------------------------------
+const essays = require('./essays')(app, {
+  pool, requireStudent, requireInstructor, callAnthropic, normalizeId, STUDENT_ID_PATTERN,
+  instructorName: INSTRUCTOR_NAME
+});
+
 const PORT = process.env.PORT || 3000;
 initDB()
+  .then(() => essays.init())
   .then(() => {
     app.listen(PORT, () => console.log(`Ceteris server listening on port ${PORT}`));
   })
