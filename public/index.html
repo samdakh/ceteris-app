@@ -22,6 +22,7 @@
 <script src="/vendor/marked.js"></script>
 <script src="/vendor/purify.js"></script>
 <script src="/essays-ui.js"></script>
+<script src="/admin-ui.js"></script>
 <style>
   :root {
     /* Official university colors, exact values */
@@ -387,6 +388,7 @@
   .topbar-tools { display: flex; align-items: center; gap: 16px; }
 </style>
 <link rel="stylesheet" href="/essays.css">
+<link rel="stylesheet" href="/admin.css">
 </head>
 <body>
 <div id="app"></div>
@@ -400,7 +402,7 @@
     set(k, v) { try { localStorage.setItem(k, v); } catch (e) {} },
     del(k) { try { localStorage.removeItem(k); } catch (e) {} }
   };
-  let state = { view: 'landing', student: null };
+  let state = { view: 'landing', student: null, me: null, sectionFilter: 'all' };
 
   // ---------- Helpers ----------
   if (window.marked) marked.setOptions({ gfm: true, breaks: true });
@@ -676,7 +678,7 @@
       }
       scroll.innerHTML = messages.map(m => {
         if (m.role === 'user') return `<div class="msg-user"><div class="bubble">${escapeHtml(m.content)}</div></div>`;
-        if (m.role === 'instructor') return `<div class="msg-instructor"><div class="avatar avatar-inst" aria-hidden="true">${CAP}</div><div class="note-card"><div class="note-label">Note from ${escapeHtml(instructorName)}</div><div class="md">${renderMarkdown(m.content)}</div></div></div>`;
+        if (m.role === 'instructor') return `<div class="msg-instructor"><div class="avatar avatar-inst" aria-hidden="true">${CAP}</div><div class="note-card"><div class="note-label">Note from ${escapeHtml(m.author || instructorName)}</div><div class="md">${renderMarkdown(m.content)}</div></div></div>`;
         const cls = m.role === 'error' ? 'msg-tutor msg-error' : 'msg-tutor';
         return `<div class="${cls}"><div class="avatar" aria-hidden="true">C</div><div class="md">${m.role === 'error' ? '<p>' + escapeHtml(m.content) + '</p>' : renderMarkdown(m.content)}</div></div>`;
       }).join('') + (busy ? `<div class="msg-tutor"><div class="avatar" aria-hidden="true">C</div><div class="typing" aria-label="Ceteris is writing"><span></span><span></span><span></span></div></div>` : '');
@@ -695,7 +697,7 @@
           <div class="panel-head"><div class="panel-title">From ${escapeHtml(instructorName)}</div></div>
           <div class="panel-body">${shownNotes.map(n => `
             <div class="earlier-note">
-              <div class="en-meta">${newNoteIds.has(n.id) ? '<span class="new-badge">New</span>' : ''}<span>${escapeHtml(fmtDay(n.day))}</span></div>
+              <div class="en-meta">${newNoteIds.has(n.id) ? '<span class="new-badge">New</span>' : ''}<span>${escapeHtml(fmtDay(n.day))}</span>${n.author && instructorName === 'your instructors' ? `<span>· ${escapeHtml(n.author)}</span>` : ''}</div>
               ${n.question ? `<div class="en-q">About your question: “${escapeHtml(truncate(n.question, 90))}”</div>` : ''}
               <div class="md en-body">${renderMarkdown(n.content)}</div>
             </div>`).join('')}
@@ -853,33 +855,65 @@
   }
 
   // ---------- Instructor login ----------
-  function renderInstructorLogin() {
+  // Instructor login: username and password. A new instructor (or one whose password
+  // the admin reset) creates a password at first login.
+  function renderInstructorLogin(step, username, notice) {
+    step = step || 'login';
+    let lastUser = '';
+    try { lastUser = localStorage.getItem('ceterisInstructorUser') || ''; } catch (e) {}
     root.innerHTML = `
       <header class="topbar"><div class="brand">Ceteris</div><div class="topbar-tools">${themeSwitch()}<button class="link-btn" id="back">← back</button></div></header>
       <main class="gate">
         <form class="gate-card" id="login-form" novalidate>
-          <h1>Instructor access</h1>
-          <p>Enter the instructor password to open the dashboard.</p>
-          <label for="pw" class="sr-only">Password</label>
-          <input id="pw" class="pw-input" type="password" placeholder="Password" autocomplete="current-password" />
+          <h1>${step === 'create' ? 'Create your password' : 'Instructor access'}</h1>
+          <p>${step === 'create' ? 'First time here (or your password was reset). Choose a password for your account.' : 'Log in with your instructor username and password.'}</p>
+          <div class="pw-field">
+            <label for="iuser" class="pw-label">Username</label>
+            <input id="iuser" class="pw-input" autocomplete="username" autocapitalize="none" spellcheck="false" maxlength="60" ${step === 'create' ? 'readonly' : ''} />
+          </div>
+          <div class="pw-field">
+            <label for="pw" class="pw-label">${step === 'create' ? 'New password' : 'Password'}</label>
+            <input id="pw" class="pw-input" type="password" autocomplete="${step === 'create' ? 'new-password' : 'current-password'}" maxlength="200" />
+          </div>
+          ${step === 'create' ? `<div class="pw-field"><label for="pw2" class="pw-label">Type it again</label><input id="pw2" class="pw-input" type="password" autocomplete="new-password" maxlength="200" /></div>
+            <p class="pw-help">At least 10 characters, and not your username.</p>` : ''}
+          ${notice ? `<div class="form-note" role="status">${escapeHtml(notice)}</div>` : ''}
           <div class="form-error" id="err" role="alert" hidden></div>
-          <button class="role-btn primary full" id="go" type="submit">Log in</button>
+          <button class="role-btn primary full" id="go" type="submit">${step === 'create' ? 'Create password and continue' : 'Log in'}</button>
+          ${step === 'login' ? '<p class="fine">Forgot your password? Ask your Ceteris admin to reset it.</p>' : ''}
         </form>
       </main>`;
-    const pw = document.getElementById('pw');
-    const err = document.getElementById('err');
-    pw.focus();
-    document.getElementById('back').onclick = () => go('landing');
+    bindThemeSwitches();
+    const user = document.getElementById('iuser'), pw = document.getElementById('pw'), pw2 = document.getElementById('pw2');
+    const err = document.getElementById('err'), btn = document.getElementById('go');
+    user.value = username || lastUser;
+    (user.value && step === 'login' ? pw : step === 'create' ? pw : user).focus();
+    document.getElementById('back').onclick = () => step === 'create' ? renderInstructorLogin('login', user.value) : go('landing');
+    const showErr = m => { err.textContent = m; err.hidden = false; btn.disabled = false; };
     document.getElementById('login-form').onsubmit = async e => {
       e.preventDefault();
       err.hidden = true;
+      const body = { username: user.value.trim() };
+      if (!body.username) return showErr('Enter your username.');
+      if (step === 'create') {
+        if (pw.value.length < 10) return showErr('Choose a password of at least 10 characters.');
+        if (pw.value !== pw2.value) return showErr('The two passwords don’t match. Type them again.');
+        body.newPassword = pw.value;
+      } else {
+        if (!pw.value) return showErr('Enter your password.');
+        body.password = pw.value;
+      }
+      btn.disabled = true;
       try {
-        const data = await api('/api/instructor-login', { method: 'POST', body: { password: pw.value } });
+        const data = await api('/api/instructor-login', { method: 'POST', body });
+        if (data.needsNewPassword) return renderInstructorLogin('create', body.username);
+        if (data.needsPassword) return renderInstructorLogin('login', body.username, 'Enter your password.');
+        try { localStorage.setItem('ceterisInstructorUser', data.instructor.username); } catch (x) {}
         store.set(INSTRUCTOR_KEY, data.token);
         go('instructor');
       } catch (ex) {
-        err.textContent = ex.message;
-        err.hidden = false;
+        if (ex.status === 409) return renderInstructorLogin('login', body.username, ex.message);
+        showErr(ex.message);
       }
     };
   }
@@ -895,29 +929,61 @@
   }
   const displayName = r => r.name || r.studentId;
 
-  function renderInstructor() {
+  // The signed-in instructor: { id, name, username, isAdmin, sections: [{ id, name, ... }] }.
+  async function reloadMe() {
+    state.me = await iapi('/api/instructor/me');
+    if (state.sectionFilter !== 'all' && !state.me.sections.some(s => String(s.id) === String(state.sectionFilter))) state.sectionFilter = 'all';
+    return state.me;
+  }
+  // "All my sections" plus each section; hidden when there's only one.
+  function sectionSelect(id) {
+    const secs = (state.me && state.me.sections) || [];
+    if (secs.length < 2) return '';
+    return `<label class="sr-only" for="${id}">Section</label>
+      <select id="${id}" class="select section-select"><option value="all">All my sections</option>${secs.map(s => `<option value="${s.id}"${String(s.id) === String(state.sectionFilter) ? ' selected' : ''}>${escapeHtml(s.name)}</option>`).join('')}</select>`;
+  }
+  const sectionQuery = () => state.sectionFilter && state.sectionFilter !== 'all' ? `&section=${encodeURIComponent(state.sectionFilter)}` : '';
+  function bindSectionSelect(id, onChange) {
+    const el = document.getElementById(id);
+    if (el) el.onchange = () => { state.sectionFilter = el.value; onChange(); };
+  }
+
+  function refreshHeader() {
+    const who = document.getElementById('inst-who');
+    if (who && state.me) who.textContent = state.me.name;
+  }
+
+  async function renderInstructor() {
     root.innerHTML = `
       <header class="topbar">
         <div class="brand">Ceteris</div>
-        <div class="topbar-right"><span>Instructor</span>${themeSwitch()}<button class="link-btn" id="logout">Log out</button></div>
+        <div class="topbar-right"><span id="inst-who">Instructor</span>${themeSwitch()}<button class="link-btn" id="account">Account</button><button class="link-btn" id="logout">Log out</button></div>
       </header>
       <main class="dash-wrap">
         <nav class="dash-tabs" role="tablist">
           <button class="dash-tab" data-tab="conversations" role="tab">Conversations</button>
           <button class="dash-tab" data-tab="essays" role="tab">Essays</button>
           <button class="dash-tab" data-tab="usage" role="tab">Usage &amp; engagement</button>
-          <button class="dash-tab" data-tab="roster" role="tab">Roster</button>
+          <button class="dash-tab" data-tab="sections" role="tab">Sections &amp; students</button>
+          <button class="dash-tab" data-tab="instructors" role="tab" hidden>Instructors</button>
         </nav>
-        <div id="dash-body"></div>
+        <div id="dash-body"><div class="empty-state">Loading…</div></div>
       </main>`;
+    bindThemeSwitches();
     document.getElementById('logout').onclick = () => {
       iapi('/api/logout', { method: 'POST' }).catch(() => {});
       store.del(INSTRUCTOR_KEY);
+      state.me = null;
       go('landing');
     };
+    document.getElementById('account').onclick = () => showTab('account');
     document.querySelectorAll('[data-tab]').forEach(b => b.onclick = () => showTab(b.dataset.tab));
-    // First visit with an empty roster lands on the Roster tab so setup is obvious.
-    iapi('/api/roster').then(d => showTab(d.rows.length ? 'conversations' : 'roster')).catch(() => showTab('conversations'));
+    try { await reloadMe(); } catch (e) { return; }
+    refreshHeader();
+    document.querySelector('[data-tab="instructors"]').hidden = !state.me.isAdmin;
+    // Until you have a section with students, the dashboard opens on Sections so setup is obvious.
+    const hasStudents = state.me.sections.some(s => s.students > 0);
+    showTab(state.me.usesSetupPassword ? 'account' : hasStudents ? 'conversations' : 'sections');
   }
 
   function showTab(tab) {
@@ -927,7 +993,9 @@
     });
     if (tab === 'conversations') renderConversations();
     if (tab === 'usage') loadUsage();
-    if (tab === 'roster') renderRoster();
+    if (tab === 'sections') Admin.renderSections();
+    if (tab === 'instructors') Admin.renderInstructors();
+    if (tab === 'account') Admin.renderAccount(state.me && state.me.usesSetupPassword ? 'Welcome! Please choose your own password below.' : null);
     if (tab === 'essays') Essays.renderInstructorEssays();
   }
 
@@ -980,6 +1048,7 @@
           <option value="30">Last 30 days</option>
           <option value="all">All conversations</option>
         </select>
+        ${sectionSelect('conv-section')}
         <label class="sr-only" for="filter">Filter by student</label>
         <input id="filter" class="search" type="search" placeholder="Filter by student name or ID" value="${escapeHtml(convo.filter)}" />
         <span class="dash-note" id="thread-count"></span>
@@ -992,6 +1061,7 @@
     range.onchange = () => { convo.range = range.value; loadThreads(); };
     document.getElementById('filter').oninput = e => { convo.filter = e.target.value; renderThreadList(); };
     document.getElementById('refresh-btn').onclick = loadThreads;
+    bindSectionSelect('conv-section', loadThreads);
     loadThreads();
   }
 
@@ -1000,7 +1070,7 @@
     if (!list) return;
     list.innerHTML = `<div class="empty-state">Loading conversations…</div>`;
     try {
-      convo.threads = (await iapi(`/api/threads?range=${encodeURIComponent(convo.range)}`)).threads || [];
+      convo.threads = (await iapi(`/api/threads?range=${encodeURIComponent(convo.range)}${sectionQuery()}`)).threads || [];
     } catch (e) {
       if (e.status !== 401) list.innerHTML = `<div class="empty-state">Couldn't reach the server. Try refresh.</div>`;
       return;
@@ -1091,14 +1161,15 @@
         </div></li>`;
     }
     if (m.role === 'instructor') {
+      const mine = !m.authorId || (state.me && m.authorId === state.me.id);
       return `<li class="post post-instructor">
         <div class="post-avatar" aria-hidden="true">${CAP}</div>
         <div class="post-card">
-          <div class="post-head"><span class="post-author">You</span><span class="post-tag">Note to ${escapeHtml(firstNameOf(t))}</span><span class="post-time">${time}</span></div>
+          <div class="post-head"><span class="post-author">${mine ? 'You' : escapeHtml(m.author || 'Instructor')}</span><span class="post-tag">Note to ${escapeHtml(firstNameOf(t))}</span><span class="post-time">${time}</span></div>
           <div class="post-body md">${renderMarkdown(m.content)}</div>
           <div class="post-foot">
             <span>${m.seen === false ? `Not seen by ${escapeHtml(firstNameOf(t))} yet` : `Seen by ${escapeHtml(firstNameOf(t))}`}</span>
-            ${m.id ? `<button class="remove-btn" data-del="${escapeHtml(m.id)}">Delete</button>` : ''}
+            ${m.id && mine ? `<button class="remove-btn" data-del="${escapeHtml(m.id)}">Delete</button>` : ''}
           </div>
         </div></li>`;
     }
@@ -1192,13 +1263,14 @@
     const body = document.getElementById('dash-body');
     body.innerHTML = `<div class="empty-state">Loading usage data…</div>`;
     let rows;
-    try { rows = (await iapi('/api/usage')).rows || []; }
+    try { rows = (await iapi('/api/usage?x=1' + sectionQuery())).rows || []; }
     catch (e) { if (e.status !== 401) body.innerHTML = `<div class="empty-state">Couldn't reach the server.</div>`; return; }
-    if (!rows.length) { body.innerHTML = `<div class="empty-state">No students on the roster yet. Add them in the Roster tab.</div>`; return; }
+    const controls = sectionSelect('usage-section') ? `<div class="dash-controls">${sectionSelect('usage-section')}</div>` : '';
+    if (!rows.length) { body.innerHTML = controls + `<div class="empty-state">No students here yet. Add them in Sections &amp; students.</div>`; bindSectionSelect('usage-section', loadUsage); return; }
     rows.sort((a, b) => b.messageCount - a.messageCount || displayName(a).localeCompare(displayName(b)));
     const never = rows.filter(r => r.messageCount === 0).length;
-    body.innerHTML = `
-      <p class="dash-note" style="margin:0 0 12px;">${rows.length} on the roster · ${rows.length - never} have used Ceteris · ${never} haven't yet</p>
+    body.innerHTML = controls + `
+      <p class="dash-note" style="margin:0 0 12px;">${rows.length} student${rows.length === 1 ? '' : 's'} · ${rows.length - never} have used Ceteris · ${never} haven't yet</p>
       <div class="table-scroll"><table class="data-table">
         <thead><tr><th>Student</th><th>ID</th><th>Shares</th><th>Messages</th><th>Days active</th><th>First used</th><th>Last used</th></tr></thead>
         <tbody>${rows.map(r => `<tr>
@@ -1209,100 +1281,10 @@
           <td class="${r.lastSeen ? '' : 'muted'}">${escapeHtml(r.lastSeen || '—')}</td></tr>`).join('')}
         </tbody></table></div>
       <p class="dash-note" style="margin-top:10px;">Click a name to read that student's conversations.</p>`;
+    bindSectionSelect('usage-section', loadUsage);
     body.querySelectorAll('[data-convos]').forEach(b => b.onclick = () => {
       convo.filter = b.dataset.convos; convo.range = 'all';
       showTab('conversations');
-    });
-  }
-
-  async function renderRoster() {
-    const body = document.getElementById('dash-body');
-    body.innerHTML = `
-      <div class="roster-grid">
-        <div class="box">
-          <h2>Add students</h2>
-          <p class="help">Paste one student per line: the 6-character ID, optionally followed by a comma and the student's name. Two columns copied from a spreadsheet work too. Adding an ID that's already listed just updates the name.</p>
-          <label for="roster-input" class="sr-only">Student IDs</label>
-          <textarea id="roster-input" class="roster-input" rows="9" placeholder="A1B2C3, Jordan Lee&#10;D4E5F6, Sam Ortiz&#10;G7H8J9"></textarea>
-          <div class="roster-actions"><button class="role-btn primary" id="roster-add">Add to roster</button></div>
-          <div class="roster-result" id="roster-result" role="status"></div>
-        </div>
-        <div id="roster-list"><div class="empty-state">Loading roster…</div></div>
-      </div>`;
-    document.getElementById('roster-add').onclick = addToRoster;
-    loadRosterList();
-  }
-
-  async function addToRoster() {
-    const input = document.getElementById('roster-input');
-    const result = document.getElementById('roster-result');
-    const btn = document.getElementById('roster-add');
-    if (!input.value.trim()) { result.textContent = 'Paste at least one student ID first.'; return; }
-    btn.disabled = true;
-    try {
-      const r = await iapi('/api/roster', { method: 'POST', body: { text: input.value } });
-      const parts = [];
-      if (r.added) parts.push(`Added ${r.added} student${r.added === 1 ? '' : 's'}.`);
-      if (r.updated) parts.push(`Updated ${r.updated} already on the roster.`);
-      if (!r.added && !r.updated) parts.push('No valid IDs found.');
-      result.innerHTML = escapeHtml(parts.join(' ')) + (r.invalid.length
-        ? `<div class="warn" style="margin-top:6px;">Skipped ${r.invalid.length} line${r.invalid.length === 1 ? '' : 's'} without a 6-character ID: ${r.invalid.slice(0, 5).map(l => `<span class="mono">${escapeHtml(l)}</span>`).join(', ')}${r.invalid.length > 5 ? '…' : ''}</div>` : '');
-      if (r.added || r.updated) input.value = '';
-      loadRosterList();
-    } catch (e) {
-      if (e.status !== 401) result.textContent = e.message;
-    }
-    btn.disabled = false;
-  }
-
-  async function loadRosterList() {
-    const list = document.getElementById('roster-list');
-    let rows;
-    try { rows = (await iapi('/api/roster')).rows || []; }
-    catch (e) { if (e.status !== 401) list.innerHTML = `<div class="empty-state">Couldn't load the roster.</div>`; return; }
-    if (!rows.length) {
-      list.innerHTML = `<div class="box"><h2>Roster</h2><p class="help" style="margin:0;">No students yet. Until you add IDs, nobody can log in as a student.</p></div>`;
-      return;
-    }
-    list.innerHTML = `
-      <h2 style="font-size:18px;margin:0 0 12px;">Roster <span class="dash-note">(${rows.length})</span></h2>
-      <div class="table-scroll"><table class="data-table">
-        <thead><tr><th>ID</th><th>Name</th><th>Password</th><th>Last active</th><th><span class="sr-only">Actions</span></th></tr></thead>
-        <tbody>${rows.map(r => `<tr>
-          <td class="mono">${escapeHtml(r.studentId)}</td>
-          <td class="${r.name ? '' : 'muted'}">${escapeHtml(r.name || 'no name')}</td>
-          <td class="${r.passwordSetAt ? '' : 'muted'}">${r.passwordSetAt ? 'Set ' + escapeHtml(new Date(r.passwordSetAt).toLocaleDateString([], { month: 'short', day: 'numeric' })) : 'Not yet'}</td>
-          <td class="${r.lastSeen ? '' : 'muted'}">${escapeHtml(r.lastSeen || 'never')}</td>
-          <td class="roster-btns">${r.passwordSetAt ? `<button class="remove-btn" data-reset="${escapeHtml(r.studentId)}">Reset password</button>` : ''}<button class="remove-btn" data-remove="${escapeHtml(r.studentId)}">Remove</button></td></tr>`).join('')}
-        </tbody></table></div>
-      <p class="dash-note" style="margin-top:10px;">Students create a password the first time they log in. <strong>Reset password</strong> logs the student out everywhere; they create a new password the next time they log in, so reset only when they ask, and tell them to log in soon. Removing a student ends their access right away; their past sessions stay in your reports.</p>`;
-    list.querySelectorAll('[data-reset]').forEach(b => {
-      let timer;
-      b.onclick = async () => {
-        if (!b.classList.contains('confirm')) {
-          b.classList.add('confirm'); b.textContent = 'Confirm reset';
-          timer = setTimeout(() => { b.classList.remove('confirm'); b.textContent = 'Reset password'; }, 4000);
-          return;
-        }
-        clearTimeout(timer);
-        b.disabled = true;
-        try { await iapi(`/api/roster/${encodeURIComponent(b.dataset.reset)}/reset-password`, { method: 'POST' }); loadRosterList(); }
-        catch (e) { b.disabled = false; }
-      };
-    });
-    list.querySelectorAll('[data-remove]').forEach(b => {
-      let timer;
-      b.onclick = async () => {
-        if (!b.classList.contains('confirm')) {
-          b.classList.add('confirm'); b.textContent = 'Confirm remove';
-          timer = setTimeout(() => { b.classList.remove('confirm'); b.textContent = 'Remove'; }, 4000);
-          return;
-        }
-        clearTimeout(timer);
-        b.disabled = true;
-        try { await iapi(`/api/roster/${encodeURIComponent(b.dataset.remove)}`, { method: 'DELETE' }); loadRosterList(); }
-        catch (e) { b.disabled = false; }
-      };
     });
   }
 
@@ -1313,6 +1295,7 @@
     setCleanup: fn => { viewCleanup = fn; },
     icons: { ARROW, SEND, CHECK, CAP, LOCK }
   });
+  const Admin = window.CeterisAdmin({ iapi, escapeHtml, state, reloadMe, refreshHeader });
 
   // ---------- Start ----------
   (async function start() {

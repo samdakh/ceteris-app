@@ -354,3 +354,26 @@ html[data-theme="dark"] .ef-note, html[data-theme="dark"] .pp-bonus { background
 .pp-pastes li { margin: 6px 0; }
 .pp-paste-meta { display: block; font-family: var(--font-mono); font-size: 11px; color: var(--ink-soft); }
 .pp-nopaste { margin: 8px 0 0; }
+
+/* Essay form: one row per section (in class or take-home) */
+.sched-row { border: 1px solid var(--line); border-radius: 10px; padding: 10px 14px; margin-bottom: 10px; background: var(--surface-2); }
+.sched-row:not(.on) .sched-times, .sched-row:not(.on) .sched-mode { opacity: .55; }
+.sched-top { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.sched-check { display: flex; align-items: center; gap: 8px; font-weight: 600; font-size: 14.5px; cursor: pointer; }
+.sched-check input { width: 17px; height: 17px; accent-color: var(--blue); }
+html[data-theme="dark"] .sched-check input { accent-color: var(--gold); }
+.sched-mode .select { font-size: 13.5px; padding: 5px 10px; }
+.sched-times { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-top: 10px; }
+.sched-times label { display: flex; align-items: center; gap: 6px; }
+.sched-times .ef-input { width: auto; padding: 6px 10px; font-size: 14px; }
+.sched-times .sched-mins { width: 80px; }
+.sched-lbl { font-size: 13px; color: var(--ink-soft); }
+.sched-row .sched-take, .sched-row.takehome .sched-class { display: none; }
+.sched-row.takehome .sched-take { display: flex; }
+.sched-note { font-size: 12.5px; color: var(--ink-soft); margin-top: 6px; }
+.sched-note:empty { display: none; }
+.sched-note.warn { color: var(--error); }
+.es-scheds { display: flex; flex-direction: column; gap: 4px; margin-top: 6px; }
+.es-sched { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; font-size: 12.5px; }
+.es-sec { font-weight: 600; }
+.sub-scheds { margin: 0 0 14px; }

@@ -139,11 +139,24 @@ function cleanEssay(body) {
   const tw = c.targetWords || {};
   const min = int(tw.min, 0, 5000, 250), max = int(tw.max, 0, 5000, 400);
 
-  let opensAt = b.opensAt ? new Date(b.opensAt) : null;
-  let closesAt = b.closesAt ? new Date(b.closesAt) : null;
-  if ((opensAt && isNaN(opensAt)) || (closesAt && isNaN(closesAt))) return { error: 'The session time is not a valid date.' };
-  if (!!opensAt !== !!closesAt) return { error: 'Set both a start and an end time, or neither.' };
-  if (opensAt && closesAt <= opensAt) return { error: 'The end time must be after the start time.' };
+  // Which sections get the essay, each with its own session time (or none yet).
+  const schedule = [];
+  const seen = new Set();
+  for (const row of (Array.isArray(b.schedule) ? b.schedule.slice(0, 50) : [])) {
+    const sectionId = parseInt(row && row.sectionId, 10);
+    if (!Number.isInteger(sectionId) || seen.has(sectionId)) continue;
+    seen.add(sectionId);
+    const opensAt = row.opensAt ? new Date(row.opensAt) : null;
+    const closesAt = row.closesAt ? new Date(row.closesAt) : null;
+    if ((opensAt && isNaN(opensAt)) || (closesAt && isNaN(closesAt))) return { error: 'A session time is not a valid date.' };
+    if (!!opensAt !== !!closesAt) return { error: 'For each section, set both a start and an end time, or neither.' };
+    if (opensAt && closesAt <= opensAt) return { error: 'Each end time must be after its start time.' };
+    // In class: everyone writes during the section's class time. Take-home: each student
+    // gets one timed attempt (durationMinutes from when they start), any time before the due time.
+    const mode = row.mode === 'takehome' ? 'takehome' : 'class';
+    const durationMinutes = mode === 'takehome' ? int(row.durationMinutes, 5, 240, 20) : null;
+    schedule.push({ sectionId, opensAt, closesAt, mode, durationMinutes });
+  }
 
   return {
     essay: {
@@ -156,36 +169,44 @@ function cleanEssay(body) {
         rubric, bonus
       },
       brief: str(b.brief, 10000),
-      opensAt, closesAt,
+      schedule,
       coachEnabled: b.coachEnabled !== false
     }
   };
 }
 
-function essayStatus(e, now) {
-  if (!e.opens_at) return 'unscheduled';
-  if (now < new Date(e.opens_at)) return 'scheduled';
-  if (now < new Date(e.closes_at)) return 'open';
+function windowStatus(opensAt, closesAt, now) {
+  if (!opensAt) return 'unscheduled';
+  if (now < new Date(opensAt)) return 'scheduled';
+  if (now < new Date(closesAt)) return 'open';
   return 'closed';
 }
 
-// What a student may see of an essay: no private brief, no bonus.
-function essayForStudent(e) {
+// What a student may see of an essay: no private brief, no bonus. The times are the
+// student's own session (their section's, or the one they started in).
+function essayForStudent(e, win) {
   const c = e.config;
   return {
     id: e.id, title: e.title, prompt: e.prompt,
     stages: c.stages, draftMinutes: c.draftMinutes, checkMinutes: c.checkMinutes, targetWords: c.targetWords,
     // Criterion names and weights only: the "strong answer" descriptions can give the answer away mid-essay.
     rubric: c.rubric.map(r => ({ criterion: r.criterion, weight: r.weight })),
-    coachEnabled: e.coach_enabled, opensAt: e.opens_at, closesAt: e.closes_at
+    coachEnabled: e.coach_enabled, opensAt: win.opensAt, closesAt: win.closesAt,
+    mode: win.mode || 'class', durationMinutes: win.durationMinutes || null, dueAt: win.dueAt || null
   };
 }
 
-function essayForInstructor(e, now) {
+// schedule: this instructor's sections that get the essay, with their times.
+function essayForInstructor(e, schedule, now) {
+  now = now || new Date();
   return {
     id: e.id, title: e.title, prompt: e.prompt, config: e.config, brief: e.brief,
-    coachEnabled: e.coach_enabled, opensAt: e.opens_at, closesAt: e.closes_at,
-    status: essayStatus(e, now || new Date()), updatedAt: e.updated_at
+    coachEnabled: e.coach_enabled, updatedAt: e.updated_at,
+    schedule: (schedule || []).map(x => ({
+      sectionId: x.section_id, sectionName: x.name, opensAt: x.opens_at, closesAt: x.closes_at,
+      mode: x.mode || 'class', durationMinutes: x.duration_minutes,
+      status: windowStatus(x.opens_at, x.closes_at, now)
+    }))
   };
 }
 
@@ -203,7 +224,7 @@ function workForStudent(w) {
 
 function coachSystemPrompt(e, w, stage, instructorName, now) {
   const c = e.config;
-  const minutesLeft = Math.max(0, Math.round((new Date(e.closes_at) - now) / 60000));
+  const minutesLeft = Math.max(0, Math.round((new Date(w.window_closes_at) - now) / 60000));
   const stageLines = c.stages.map((s, i) => `${i + 1}. ${s.title} (about ${s.minutes} min). Student's task: ${s.task}${s.question ? ` Guiding question: ${s.question}` : ''}`);
   stageLines.push(`${c.stages.length + 1}. Draft (about ${c.draftMinutes} min): write the essay with the plan alongside.`);
   stageLines.push(`${c.stages.length + 2}. Check and submit (about ${c.checkMinutes} min): compare the essay with the rubric, then submit.`);
@@ -274,7 +295,9 @@ function applyWordingRuleInner(reply, m, alreadyUsed) {
 // ---------------------------------------------------------------------------------
 
 module.exports = function registerEssays(app, deps) {
-  const { pool, requireStudent, requireInstructor, callAnthropic, normalizeId, STUDENT_ID_PATTERN, instructorName } = deps;
+  const { pool, requireStudent, requireInstructor, callAnthropic, normalizeId, STUDENT_ID_PATTERN,
+          teaches, canSeeStudent, visibleTo, sectionFilter, instructorNamesFor } = deps;
+  const GRACE = `($1::text || ' seconds')::interval`;
 
   async function init() {
     await pool.query(`
@@ -289,6 +312,15 @@ module.exports = function registerEssays(app, deps) {
         coach_enabled BOOLEAN NOT NULL DEFAULT true,
         created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
         updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+      );
+      ALTER TABLE essays ADD COLUMN IF NOT EXISTS created_by INT;
+      -- Which sections get each essay, and when (each section has its own session).
+      CREATE TABLE IF NOT EXISTS essay_sections (
+        essay_id INT NOT NULL REFERENCES essays(id) ON DELETE CASCADE,
+        section_id INT NOT NULL REFERENCES sections(id) ON DELETE CASCADE,
+        opens_at TIMESTAMPTZ,
+        closes_at TIMESTAMPTZ,
+        PRIMARY KEY (essay_id, section_id)
       );
       CREATE TABLE IF NOT EXISTS essay_work (
         essay_id INT NOT NULL REFERENCES essays(id) ON DELETE CASCADE,
@@ -305,6 +337,12 @@ module.exports = function registerEssays(app, deps) {
         submitted_at TIMESTAMPTZ,
         PRIMARY KEY (essay_id, student_id)
       );
+      ALTER TABLE essay_sections ADD COLUMN IF NOT EXISTS mode TEXT NOT NULL DEFAULT 'class';
+      ALTER TABLE essay_sections ADD COLUMN IF NOT EXISTS duration_minutes INT;
+      -- The session a student is writing in (their section's, when they started).
+      ALTER TABLE essay_work ADD COLUMN IF NOT EXISTS section_id INT;
+      ALTER TABLE essay_work ADD COLUMN IF NOT EXISTS window_opens_at TIMESTAMPTZ;
+      ALTER TABLE essay_work ADD COLUMN IF NOT EXISTS window_closes_at TIMESTAMPTZ;
       CREATE TABLE IF NOT EXISTS essay_snapshots (
         id BIGSERIAL PRIMARY KEY,
         essay_id INT NOT NULL,
@@ -319,23 +357,34 @@ module.exports = function registerEssays(app, deps) {
       ALTER TABLE essay_work ADD COLUMN IF NOT EXISTS plan_pastes JSONB NOT NULL DEFAULT '[]'::jsonb;
       CREATE TABLE IF NOT EXISTS app_flags (key TEXT PRIMARY KEY);
     `);
+    const admin = (await pool.query('SELECT id FROM instructors WHERE is_admin ORDER BY id LIMIT 1')).rows[0];
     // Seed the first essay exactly once, even if it is later deleted.
     const seeded = await pool.query(`INSERT INTO app_flags (key) VALUES ('essay_seed_airbnb') ON CONFLICT DO NOTHING RETURNING key`);
     if (seeded.rows[0]) {
-      await pool.query('INSERT INTO essays (title, prompt, config, brief) VALUES ($1, $2, $3, $4)',
-        [AIRBNB_ESSAY.title, AIRBNB_ESSAY.prompt, JSON.stringify(AIRBNB_ESSAY.config), AIRBNB_ESSAY.brief]);
+      await pool.query('INSERT INTO essays (title, prompt, config, brief, created_by) VALUES ($1, $2, $3, $4, $5)',
+        [AIRBNB_ESSAY.title, AIRBNB_ESSAY.prompt, JSON.stringify(AIRBNB_ESSAY.config), AIRBNB_ESSAY.brief, admin ? admin.id : null]);
+    }
+    // One-time move to per-section times: an essay that already had a time keeps it for
+    // every existing section, and work already started keeps its session.
+    const moved = await pool.query(`INSERT INTO app_flags (key) VALUES ('essay_sections_v1') ON CONFLICT DO NOTHING RETURNING key`);
+    if (moved.rows[0]) {
+      if (admin) await pool.query('UPDATE essays SET created_by=$1 WHERE created_by IS NULL', [admin.id]);
+      await pool.query(`INSERT INTO essay_sections (essay_id, section_id, opens_at, closes_at)
+                        SELECT e.id, s.id, e.opens_at, e.closes_at FROM essays e CROSS JOIN sections s
+                        WHERE e.opens_at IS NOT NULL ON CONFLICT DO NOTHING`);
+      await pool.query(`UPDATE essay_work w SET window_opens_at = e.opens_at, window_closes_at = e.closes_at,
+                          section_id = (SELECT ss.section_id FROM section_students ss WHERE ss.student_id = w.student_id ORDER BY ss.section_id LIMIT 1)
+                        FROM essays e WHERE e.id = w.essay_id AND w.window_closes_at IS NULL`);
     }
     await autoSubmit();
     setInterval(() => autoSubmit().catch(e => console.error('Ceteris: auto-submit failed —', e.message)), 30000);
   }
 
-  // Whatever a student has written is submitted automatically once the end time (plus grace) passes.
+  // Whatever a student has written is submitted automatically once their session ends (plus grace).
   async function autoSubmit() {
     await pool.query(`
-      UPDATE essay_work w SET status = 'submitted', auto_submitted = true, submitted_at = e.closes_at
-      FROM essays e
-      WHERE w.essay_id = e.id AND w.status = 'in_progress' AND e.closes_at IS NOT NULL
-        AND e.closes_at + ($1 || ' seconds')::interval < now()`, [String(GRACE_SECONDS)]);
+      UPDATE essay_work SET status = 'submitted', auto_submitted = true, submitted_at = window_closes_at
+      WHERE status = 'in_progress' AND window_closes_at IS NOT NULL AND window_closes_at + ${GRACE} < now()`, [String(GRACE_SECONDS)]);
   }
 
   async function loadEssay(id) {
@@ -350,8 +399,20 @@ module.exports = function registerEssays(app, deps) {
     return r.rows[0] || null;
   }
 
-  function writable(e, now) {
-    return e.opens_at && now >= new Date(e.opens_at) && now <= new Date(new Date(e.closes_at).getTime() + GRACE_SECONDS * 1000);
+  // The session open right now for this student (through any of their sections), if any.
+  async function openWindow(essayId, studentId) {
+    const r = await pool.query(`
+      SELECT es.section_id, es.opens_at, es.closes_at, es.mode, es.duration_minutes FROM essay_sections es
+      JOIN section_students ss ON ss.section_id = es.section_id AND ss.student_id = $2
+      WHERE es.essay_id = $1 AND es.opens_at <= now() AND es.closes_at > now()
+      ORDER BY es.closes_at LIMIT 1`, [essayId, studentId]);
+    return r.rows[0] || null;
+  }
+
+  // Saves still count up to GRACE_SECONDS after the student's session ends.
+  function writable(w, now) {
+    return w && w.status === 'in_progress' && w.window_closes_at
+      && now <= new Date(new Date(w.window_closes_at).getTime() + GRACE_SECONDS * 1000);
   }
 
   const fail = (res, where) => e => {
@@ -361,24 +422,33 @@ module.exports = function registerEssays(app, deps) {
 
   // ---- Student routes -------------------------------------------------------------
 
-  // Essays open right now, plus the student's earlier essays (read-only copies).
+  // Essays open right now for the student, plus their earlier essays (read-only copies).
   app.get('/api/essays/student', requireStudent, async (req, res) => {
     try {
       await autoSubmit();
       const now = new Date();
+      const sid = req.student.id;
       const open = await pool.query(`
-        SELECT e.*, w.status AS work_status FROM essays e
+        SELECT DISTINCT ON (e.id) e.id, e.title, w.status AS work_status, es.mode, es.duration_minutes, es.closes_at AS due_at,
+          CASE WHEN w.status = 'in_progress' THEN w.window_closes_at ELSE es.closes_at END AS closes_at
+        FROM essays e
+        JOIN essay_sections es ON es.essay_id = e.id
+        JOIN section_students ss ON ss.section_id = es.section_id AND ss.student_id = $1
         LEFT JOIN essay_work w ON w.essay_id = e.id AND w.student_id = $1
-        WHERE e.opens_at <= now() AND e.closes_at > now()
-        ORDER BY e.closes_at`, [req.student.id]);
+        WHERE (es.opens_at <= now() AND es.closes_at > now() AND w.student_id IS NULL)
+           OR (w.status = 'in_progress' AND w.window_closes_at > now() AND es.section_id = w.section_id)
+           OR (w.status = 'submitted' AND es.opens_at <= now() AND es.closes_at > now())
+        ORDER BY e.id, es.closes_at`, [sid]);
       const past = await pool.query(`
         SELECT e.id, e.title, w.status, w.auto_submitted, w.submitted_at FROM essay_work w
         JOIN essays e ON e.id = w.essay_id
-        WHERE w.student_id = $1 AND (w.status = 'submitted' OR e.closes_at <= now())
-        ORDER BY COALESCE(w.submitted_at, e.closes_at) DESC LIMIT 20`, [req.student.id]);
+        WHERE w.student_id = $1 AND (w.status = 'submitted' OR w.window_closes_at <= now())
+        ORDER BY COALESCE(w.submitted_at, w.window_closes_at) DESC LIMIT 20`, [sid]);
       res.json({
         serverTime: now.toISOString(),
-        open: open.rows.map(e => ({ id: e.id, title: e.title, closesAt: e.closes_at, workStatus: e.work_status || null })),
+        open: open.rows.sort((a, b) => new Date(a.closes_at) - new Date(b.closes_at))
+          .map(e => ({ id: e.id, title: e.title, closesAt: e.closes_at, workStatus: e.work_status || null,
+                       mode: e.mode, durationMinutes: e.duration_minutes, dueAt: e.due_at })),
         past: past.rows.map(r => ({ id: r.id, title: r.title, autoSubmitted: r.auto_submitted, submittedAt: r.submitted_at }))
       });
     } catch (e) { fail(res, 'essay list')(e); }
@@ -390,18 +460,47 @@ module.exports = function registerEssays(app, deps) {
       const e = await loadEssay(req.params.id);
       if (!e) return res.status(404).json({ error: 'Essay not found.' });
       const w = await loadWork(e.id, req.student.id);
-      const now = new Date();
-      if (!w && essayStatus(e, now) !== 'open') return res.status(404).json({ error: 'This essay is not open right now.' });
-      res.json({ serverTime: now.toISOString(), instructorName, essay: essayForStudent(e), work: workForStudent(w) });
+      let window;
+      if (w) {
+        const es = (await pool.query('SELECT mode, duration_minutes, closes_at FROM essay_sections WHERE essay_id=$1 AND section_id=$2', [e.id, w.section_id])).rows[0] || {};
+        window = { opensAt: w.window_opens_at, closesAt: w.window_closes_at, sectionId: w.section_id, mode: es.mode, durationMinutes: es.duration_minutes, dueAt: es.closes_at };
+      } else {
+        const win = await openWindow(e.id, req.student.id);
+        if (!win) return res.status(404).json({ error: 'This essay is not open right now.' });
+        // Not started yet: for a take-home, "closes" is the due time; their clock starts at Start.
+        window = { opensAt: win.opens_at, closesAt: win.closes_at, sectionId: win.section_id, mode: win.mode, durationMinutes: win.duration_minutes, dueAt: win.closes_at };
+      }
+      const names = await sectionInstructorNames(window.sectionId, req.student.id);
+      res.json({ serverTime: new Date().toISOString(), instructorName: names, essay: essayForStudent(e, window), work: workForStudent(w) });
     } catch (err) { fail(res, 'essay fetch')(err); }
   });
+
+  // "Prof. A" or "Prof. A and Prof. B": the instructors of the student's section.
+  async function sectionInstructorNames(sectionId, studentId) {
+    let names = [];
+    if (sectionId) {
+      const r = await pool.query(`SELECT i.name FROM section_instructors si JOIN instructors i ON i.id = si.instructor_id WHERE si.section_id=$1 ORDER BY i.name`, [sectionId]);
+      names = r.rows.map(x => x.name);
+    }
+    if (!names.length) names = await instructorNamesFor(studentId);
+    if (!names.length) return deps.instructorName;
+    return names.length === 1 ? names[0] : names.slice(0, -1).join(', ') + ' and ' + names[names.length - 1];
+  }
 
   // Starting = the student has read the rules (what the instructor will see) and begins.
   app.post('/api/essays/:id/start', requireStudent, async (req, res) => {
     try {
       const e = await loadEssay(req.params.id);
-      if (!e || essayStatus(e, new Date()) !== 'open') return res.status(400).json({ error: 'This essay is not open right now.' });
-      await pool.query(`INSERT INTO essay_work (essay_id, student_id) VALUES ($1, $2) ON CONFLICT DO NOTHING`, [e.id, req.student.id]);
+      if (!e) return res.status(404).json({ error: 'Essay not found.' });
+      const win = await openWindow(e.id, req.student.id);
+      if (!win) return res.status(400).json({ error: 'This essay is not open right now.' });
+      // In class: the section's class time. Take-home: one attempt, starting now, for the time
+      // limit (or until the due time, whichever comes first). Starting twice changes nothing.
+      const takehome = win.mode === 'takehome';
+      await pool.query(`INSERT INTO essay_work (essay_id, student_id, section_id, window_opens_at, window_closes_at)
+                        VALUES ($1, $2, $3, CASE WHEN $6 THEN now() ELSE $4 END,
+                                CASE WHEN $6 THEN LEAST(now() + make_interval(mins => $7), $5) ELSE $5 END)
+                        ON CONFLICT DO NOTHING`, [e.id, req.student.id, win.section_id, win.opens_at, win.closes_at, takehome, win.duration_minutes || 20]);
       res.json({ work: workForStudent(await loadWork(e.id, req.student.id)) });
     } catch (err) { fail(res, 'essay start')(err); }
   });
@@ -412,10 +511,10 @@ module.exports = function registerEssays(app, deps) {
       const e = await loadEssay(req.params.id);
       if (!e) return res.status(404).json({ error: 'Essay not found.' });
       const now = new Date();
-      if (!writable(e, now)) return res.status(409).json({ error: 'Time is up for this essay.', closed: true });
       const w = await loadWork(e.id, req.student.id);
       if (!w) return res.status(400).json({ error: 'Start the essay first.' });
       if (w.status !== 'in_progress') return res.status(409).json({ error: 'This essay has already been submitted.', closed: true });
+      if (!writable(w, now)) return res.status(409).json({ error: 'Time is up for this essay.', closed: true });
 
       const keys = e.config.stages.map(s => s.key);
       const plan = {};
@@ -455,9 +554,8 @@ module.exports = function registerEssays(app, deps) {
       if (!e) return res.status(404).json({ error: 'Essay not found.' });
       if (!e.coach_enabled) return res.status(400).json({ error: 'The coach is turned off for this essay.' });
       const now = new Date();
-      if (!writable(e, now)) return res.status(409).json({ error: 'Time is up for this essay.', closed: true });
       const w = await loadWork(e.id, req.student.id);
-      if (!w || w.status !== 'in_progress') return res.status(409).json({ error: 'This essay is not in progress.', closed: true });
+      if (!w || !writable(w, now)) return res.status(409).json({ error: 'This essay is not in progress.', closed: true });
       const message = str(req.body && req.body.message, 1500).trim();
       if (!message) return res.status(400).json({ error: 'Type a question for the coach.' });
       if ((w.coach || []).filter(m => m.role === 'student').length >= MAX_COACH_MESSAGES) {
@@ -467,7 +565,7 @@ module.exports = function registerEssays(app, deps) {
 
       const history = (w.coach || []).map(m => ({ role: m.role === 'student' ? 'user' : 'assistant', content: m.content + (m.wording ? `\n(Example phrasing offered: "${m.wording.suggestion}")` : '') }));
       history.push({ role: 'user', content: message });
-      const system = coachSystemPrompt(e, w, stage, instructorName, now);
+      const system = coachSystemPrompt(e, w, stage, await sectionInstructorNames(w.section_id, req.student.id), now);
 
       let reply;
       try {
@@ -495,7 +593,10 @@ module.exports = function registerEssays(app, deps) {
     try {
       const e = await loadEssay(req.params.id);
       if (!e) return res.status(404).json({ error: 'Essay not found.' });
-      if (!writable(e, new Date())) return res.status(409).json({ error: 'Time is up; your essay was submitted automatically.', closed: true });
+      const w = await loadWork(e.id, req.student.id);
+      if (!w) return res.status(400).json({ error: 'Start the essay first.' });
+      if (w.status !== 'in_progress') return res.status(409).json({ error: 'This essay has already been submitted.' });
+      if (!writable(w, new Date())) return res.status(409).json({ error: 'Time is up; your essay was submitted automatically.', closed: true });
       const r = await pool.query(`UPDATE essay_work SET status='submitted', submitted_at=now(), updated_at=now()
                                   WHERE essay_id=$1 AND student_id=$2 AND status='in_progress' RETURNING *`, [e.id, req.student.id]);
       if (!r.rows[0]) return res.status(409).json({ error: 'This essay has already been submitted.' });
@@ -504,40 +605,103 @@ module.exports = function registerEssays(app, deps) {
   });
 
   // ---- Instructor routes ------------------------------------------------------------
+  // An instructor sees essays they created or that are assigned to one of their sections,
+  // and only the students (and section times) of their own sections.
+
+  async function visibleEssay(req, id) {
+    const e = await loadEssay(id);
+    if (!e) return null;
+    if (e.created_by === req.instructor.id) return e;
+    const r = await pool.query(`SELECT 1 FROM essay_sections es JOIN section_instructors si ON si.section_id = es.section_id
+                                WHERE es.essay_id=$1 AND si.instructor_id=$2 LIMIT 1`, [e.id, req.instructor.id]);
+    return r.rows[0] ? e : null;
+  }
+
+  async function mySchedule(essayId, instructorId) {
+    const r = await pool.query(`
+      SELECT es.section_id, s.name, es.opens_at, es.closes_at, es.mode, es.duration_minutes FROM essay_sections es
+      JOIN sections s ON s.id = es.section_id
+      JOIN section_instructors si ON si.section_id = es.section_id AND si.instructor_id = $2
+      WHERE es.essay_id = $1 ORDER BY es.opens_at NULLS LAST, s.name`, [essayId, instructorId]);
+    return r.rows;
+  }
 
   app.get('/api/essays', requireInstructor, async (req, res) => {
     try {
       await autoSubmit();
       const now = new Date();
+      const me = req.instructor.id;
       const r = await pool.query(`
-        SELECT e.*, COUNT(w.student_id)::int AS started,
-               COUNT(w.student_id) FILTER (WHERE w.status = 'submitted')::int AS submitted
-        FROM essays e LEFT JOIN essay_work w ON w.essay_id = e.id
-        GROUP BY e.id ORDER BY COALESCE(e.opens_at, e.created_at) DESC`);
-      const roster = await pool.query('SELECT COUNT(*)::int AS n FROM roster');
-      res.json({
-        serverTime: now.toISOString(), rosterSize: roster.rows[0].n,
-        essays: r.rows.map(e => ({ ...essayForInstructor(e, now), started: e.started, submitted: e.submitted }))
-      });
+        SELECT e.* FROM essays e
+        WHERE e.created_by = $1 OR EXISTS (SELECT 1 FROM essay_sections es JOIN section_instructors si ON si.section_id = es.section_id
+                                           WHERE es.essay_id = e.id AND si.instructor_id = $1)
+        ORDER BY e.created_at DESC`, [me]);
+      const essays = [];
+      for (const e of r.rows) {
+        const schedule = await mySchedule(e.id, me);
+        // Counts over the students in this essay's sections that you teach.
+        const c = await pool.query(`
+          SELECT COUNT(DISTINCT ss.student_id)::int AS students,
+                 COUNT(DISTINCT w.student_id)::int AS started,
+                 COUNT(DISTINCT w.student_id) FILTER (WHERE w.status = 'submitted')::int AS submitted
+          FROM essay_sections es
+          JOIN section_instructors si ON si.section_id = es.section_id AND si.instructor_id = $2
+          JOIN section_students ss ON ss.section_id = es.section_id
+          LEFT JOIN essay_work w ON w.essay_id = es.essay_id AND w.student_id = ss.student_id
+          WHERE es.essay_id = $1`, [e.id, me]);
+        const anyWork = await pool.query('SELECT 1 FROM essay_work WHERE essay_id=$1 LIMIT 1', [e.id]);
+        const others = await pool.query(`SELECT COUNT(*)::int AS n FROM essay_sections es WHERE es.essay_id=$1
+                                         AND NOT EXISTS (SELECT 1 FROM section_instructors si WHERE si.section_id = es.section_id AND si.instructor_id = $2)`, [e.id, me]);
+        essays.push({ ...essayForInstructor(e, schedule, now), students: c.rows[0].students, started: c.rows[0].started,
+          submitted: c.rows[0].submitted, hasWork: !!anyWork.rows[0], otherSections: others.rows[0].n });
+      }
+      res.json({ serverTime: now.toISOString(), essays });
     } catch (err) { fail(res, 'essay list')(err); }
   });
 
   app.get('/api/essays/:id', requireInstructor, async (req, res) => {
     try {
-      const e = await loadEssay(req.params.id);
+      const e = await visibleEssay(req, req.params.id);
       if (!e) return res.status(404).json({ error: 'Essay not found.' });
-      res.json({ essay: essayForInstructor(e) });
+      res.json({ essay: essayForInstructor(e, await mySchedule(e.id, req.instructor.id)) });
     } catch (err) { fail(res, 'essay fetch')(err); }
   });
+
+  // Saves the schedule rows for the instructor's own sections; other instructors' rows stay.
+  async function saveSchedule(essayId, instructorId, schedule) {
+    for (const row of schedule) {
+      if (!(await teaches(instructorId, row.sectionId))) return 'You can only schedule essays for your own sections.';
+    }
+    await pool.query(`DELETE FROM essay_sections es WHERE es.essay_id=$1
+                      AND EXISTS (SELECT 1 FROM section_instructors si WHERE si.section_id = es.section_id AND si.instructor_id = $2)
+                      AND NOT (es.section_id = ANY($3::int[]))`, [essayId, instructorId, schedule.map(x => x.sectionId)]);
+    for (const row of schedule) {
+      await pool.query(`INSERT INTO essay_sections (essay_id, section_id, opens_at, closes_at, mode, duration_minutes) VALUES ($1, $2, $3, $4, $5, $6)
+                        ON CONFLICT (essay_id, section_id) DO UPDATE SET opens_at = EXCLUDED.opens_at, closes_at = EXCLUDED.closes_at,
+                          mode = EXCLUDED.mode, duration_minutes = EXCLUDED.duration_minutes`,
+        [essayId, row.sectionId, row.opensAt, row.closesAt, row.mode, row.durationMinutes]);
+    }
+    // Students already writing in a section whose time changed follow the new time
+    // (for a take-home: their own time limit, cut off at the new due time).
+    await pool.query(`UPDATE essay_work w SET
+                        window_opens_at = CASE WHEN es.mode = 'takehome' THEN w.window_opens_at ELSE es.opens_at END,
+                        window_closes_at = CASE WHEN es.mode = 'takehome'
+                          THEN LEAST(w.window_opens_at + make_interval(mins => COALESCE(es.duration_minutes, 20)), es.closes_at) ELSE es.closes_at END
+                      FROM essay_sections es WHERE es.essay_id = w.essay_id AND es.section_id = w.section_id
+                        AND w.essay_id = $1 AND w.status = 'in_progress' AND es.closes_at IS NOT NULL`, [essayId]);
+    return null;
+  }
 
   app.post('/api/essays', requireInstructor, async (req, res) => {
     const { essay, error } = cleanEssay(req.body);
     if (error) return res.status(400).json({ error });
     try {
-      const r = await pool.query(`INSERT INTO essays (title, prompt, config, brief, opens_at, closes_at, coach_enabled)
-                                  VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING *`,
-        [essay.title, essay.prompt, JSON.stringify(essay.config), essay.brief, essay.opensAt, essay.closesAt, essay.coachEnabled]);
-      res.json({ essay: essayForInstructor(r.rows[0]) });
+      const r = await pool.query(`INSERT INTO essays (title, prompt, config, brief, coach_enabled, created_by)
+                                  VALUES ($1,$2,$3,$4,$5,$6) RETURNING *`,
+        [essay.title, essay.prompt, JSON.stringify(essay.config), essay.brief, essay.coachEnabled, req.instructor.id]);
+      const problem = await saveSchedule(r.rows[0].id, req.instructor.id, essay.schedule);
+      if (problem) { await pool.query('DELETE FROM essays WHERE id=$1', [r.rows[0].id]); return res.status(400).json({ error: problem }); }
+      res.json({ essay: essayForInstructor(r.rows[0], await mySchedule(r.rows[0].id, req.instructor.id)) });
     } catch (err) { fail(res, 'essay create')(err); }
   });
 
@@ -545,51 +709,71 @@ module.exports = function registerEssays(app, deps) {
     const { essay, error } = cleanEssay(req.body);
     if (error) return res.status(400).json({ error });
     try {
-      const r = await pool.query(`UPDATE essays SET title=$2, prompt=$3, config=$4, brief=$5, opens_at=$6, closes_at=$7, coach_enabled=$8, updated_at=now()
+      const e = await visibleEssay(req, req.params.id);
+      if (!e) return res.status(404).json({ error: 'Essay not found.' });
+      for (const row of essay.schedule) {
+        if (!(await teaches(req.instructor.id, row.sectionId))) return res.status(400).json({ error: 'You can only schedule essays for your own sections.' });
+      }
+      const r = await pool.query(`UPDATE essays SET title=$2, prompt=$3, config=$4, brief=$5, coach_enabled=$6, updated_at=now()
                                   WHERE id=$1 RETURNING *`,
-        [parseInt(req.params.id, 10), essay.title, essay.prompt, JSON.stringify(essay.config), essay.brief, essay.opensAt, essay.closesAt, essay.coachEnabled]);
-      if (!r.rows[0]) return res.status(404).json({ error: 'Essay not found.' });
-      res.json({ essay: essayForInstructor(r.rows[0]) });
+        [e.id, essay.title, essay.prompt, JSON.stringify(essay.config), essay.brief, essay.coachEnabled]);
+      await saveSchedule(e.id, req.instructor.id, essay.schedule);
+      res.json({ essay: essayForInstructor(r.rows[0], await mySchedule(e.id, req.instructor.id)) });
     } catch (err) { fail(res, 'essay update')(err); }
   });
 
-  // Reuse an essay in another section or year: same content, no session time.
+  // Reuse an essay: same content, no sections or times.
   app.post('/api/essays/:id/duplicate', requireInstructor, async (req, res) => {
     try {
-      const e = await loadEssay(req.params.id);
+      const e = await visibleEssay(req, req.params.id);
       if (!e) return res.status(404).json({ error: 'Essay not found.' });
-      const r = await pool.query(`INSERT INTO essays (title, prompt, config, brief, coach_enabled) VALUES ($1,$2,$3,$4,$5) RETURNING *`,
-        [`${e.title} (copy)`.slice(0, 200), e.prompt, JSON.stringify(e.config), e.brief, e.coach_enabled]);
-      res.json({ essay: essayForInstructor(r.rows[0]) });
+      const r = await pool.query(`INSERT INTO essays (title, prompt, config, brief, coach_enabled, created_by) VALUES ($1,$2,$3,$4,$5,$6) RETURNING *`,
+        [`${e.title} (copy)`.slice(0, 200), e.prompt, JSON.stringify(e.config), e.brief, e.coach_enabled, req.instructor.id]);
+      res.json({ essay: essayForInstructor(r.rows[0], []) });
     } catch (err) { fail(res, 'essay duplicate')(err); }
   });
 
-  // Deleting is only allowed before any student has started, so no paper is ever lost.
+  // Deleting is only allowed before any student has started, and only when no other
+  // instructor's section uses the essay, so no paper or schedule is ever lost.
   app.delete('/api/essays/:id', requireInstructor, async (req, res) => {
     try {
-      const e = await loadEssay(req.params.id);
+      const e = await visibleEssay(req, req.params.id);
       if (!e) return res.status(404).json({ error: 'Essay not found.' });
       const w = await pool.query('SELECT 1 FROM essay_work WHERE essay_id=$1 LIMIT 1', [e.id]);
       if (w.rows[0]) return res.status(409).json({ error: 'Students have already worked on this essay, so it can’t be deleted.' });
+      const others = await pool.query(`SELECT 1 FROM essay_sections es WHERE es.essay_id=$1
+                                       AND NOT EXISTS (SELECT 1 FROM section_instructors si WHERE si.section_id = es.section_id AND si.instructor_id = $2) LIMIT 1`, [e.id, req.instructor.id]);
+      if (others.rows[0]) return res.status(409).json({ error: 'Another instructor’s section uses this essay, so it can’t be deleted.' });
       await pool.query('DELETE FROM essays WHERE id=$1', [e.id]);
       res.json({ ok: true });
     } catch (err) { fail(res, 'essay delete')(err); }
   });
 
-  // Every roster student with their status, for the live view and the submissions list.
+  // Every student in your sections that get this essay (or one of them, ?section=ID).
   app.get('/api/essays/:id/submissions', requireInstructor, async (req, res) => {
     try {
       await autoSubmit();
-      const e = await loadEssay(req.params.id);
+      const e = await visibleEssay(req, req.params.id);
       if (!e) return res.status(404).json({ error: 'Essay not found.' });
+      const f = await sectionFilter(req, res);
+      if (!f) return;
       const keys = e.config.stages.map(s => s.key);
       const r = await pool.query(`
-        SELECT COALESCE(r.student_id, w.student_id) AS student_id, r.name, w.plan, w.draft_text, w.coach, w.wording_used, w.plan_pastes,
+        WITH mine AS (
+          SELECT es.section_id, s.name FROM essay_sections es JOIN sections s ON s.id = es.section_id
+          JOIN section_instructors si ON si.section_id = es.section_id AND si.instructor_id = $2
+          WHERE es.essay_id = $1 AND ($3::int IS NULL OR es.section_id = $3::int)
+        ), studs AS (
+          SELECT ss.student_id, json_agg(json_build_object('id', mine.section_id, 'name', mine.name) ORDER BY mine.name) AS sections
+          FROM section_students ss JOIN mine ON mine.section_id = ss.section_id GROUP BY ss.student_id
+        )
+        SELECT r.student_id, r.name, studs.sections, w.plan, w.draft_text, w.coach, w.wording_used, w.plan_pastes,
                w.status, w.auto_submitted, w.started_at, w.updated_at, w.submitted_at
-        FROM roster r FULL OUTER JOIN (SELECT * FROM essay_work WHERE essay_id = $1) w ON w.student_id = r.student_id
-        ORDER BY r.name NULLS LAST, 1`, [e.id]);
+        FROM studs JOIN roster r ON r.student_id = studs.student_id
+        LEFT JOIN essay_work w ON w.essay_id = $1 AND w.student_id = studs.student_id
+        ORDER BY r.name NULLS LAST, r.student_id`, [e.id, req.instructor.id, f.id]);
       const rows = r.rows.map(x => ({
-        studentId: x.student_id, name: x.name,
+        studentId: x.student_id, name: x.name, sections: x.sections || [],
         status: !x.status ? 'not_started' : x.status === 'submitted' ? (x.auto_submitted ? 'auto_submitted' : 'submitted') : 'writing',
         planDone: x.plan ? keys.filter(k => String(x.plan[k] || '').trim()).length : 0,
         planTotal: keys.length,
@@ -599,41 +783,49 @@ module.exports = function registerEssays(app, deps) {
         wordingUsed: !!x.wording_used,
         startedAt: x.started_at, updatedAt: x.updated_at, submittedAt: x.submitted_at
       }));
-      res.json({ serverTime: new Date().toISOString(), essay: essayForInstructor(e), rows });
+      res.json({ serverTime: new Date().toISOString(), essay: essayForInstructor(e, await mySchedule(e.id, req.instructor.id)), section: f.id, rows });
     } catch (err) { fail(res, 'submissions')(err); }
   });
 
   // One student's paper, plan and coach conversation.
   app.get('/api/essays/:id/work/:studentId', requireInstructor, async (req, res) => {
     try {
-      const e = await loadEssay(req.params.id);
+      const e = await visibleEssay(req, req.params.id);
       if (!e) return res.status(404).json({ error: 'Essay not found.' });
       const sid = normalizeId(req.params.studentId);
       if (!STUDENT_ID_PATTERN.test(sid)) return res.status(400).json({ error: 'Invalid student ID.' });
+      if (!(await canSeeStudent(req.instructor.id, sid))) return res.status(404).json({ error: 'That student is not in your sections.' });
       const w = await loadWork(e.id, sid);
       if (!w) return res.status(404).json({ error: 'This student has not started the essay.' });
       const name = await pool.query('SELECT name FROM roster WHERE student_id=$1', [sid]);
+      const sec = w.section_id ? await pool.query('SELECT name FROM sections WHERE id=$1', [w.section_id]) : { rows: [] };
       const snaps = await pool.query('SELECT COUNT(*)::int AS n FROM essay_snapshots WHERE essay_id=$1 AND student_id=$2', [e.id, sid]);
       res.json({
-        essay: essayForInstructor(e),
-        student: { studentId: sid, name: name.rows[0] ? name.rows[0].name : null },
+        essay: essayForInstructor(e, await mySchedule(e.id, req.instructor.id)),
+        student: { studentId: sid, name: name.rows[0] ? name.rows[0].name : null, section: sec.rows[0] ? sec.rows[0].name : null },
         work: {
           plan: w.plan, draftHtml: w.draft_html, words: wordCount(w.draft_text), coach: w.coach, wordingUsed: w.wording_used,
           ...pasteSummary(w.plan_pastes, w.draft_text),
           status: w.status, autoSubmitted: w.auto_submitted, startedAt: w.started_at, updatedAt: w.updated_at, submittedAt: w.submitted_at,
+          windowOpensAt: w.window_opens_at, windowClosesAt: w.window_closes_at,
           snapshots: snaps.rows[0].n
         }
       });
     } catch (err) { fail(res, 'paper fetch')(err); }
   });
 
-  // An essay open right now that this student has not submitted (pauses the tutoring chat).
+  // An essay open right now for this student that they haven't submitted (pauses the tutoring chat).
   async function essayInProgress(studentId) {
     const r = await pool.query(`
       SELECT e.title FROM essays e
+      JOIN essay_sections es ON es.essay_id = e.id
+      JOIN section_students ss ON ss.section_id = es.section_id AND ss.student_id = $1
       LEFT JOIN essay_work w ON w.essay_id = e.id AND w.student_id = $1
-      WHERE e.opens_at <= now() AND e.closes_at > now() AND (w.status IS NULL OR w.status <> 'submitted')
-      ORDER BY e.closes_at LIMIT 1`, [studentId]);
+      WHERE es.mode = 'class' AND es.opens_at <= now() AND es.closes_at > now() AND (w.status IS NULL OR w.status <> 'submitted')
+      UNION
+      SELECT e.title FROM essay_work w JOIN essays e ON e.id = w.essay_id
+      WHERE w.student_id = $1 AND w.status = 'in_progress' AND w.window_closes_at > now()
+      LIMIT 1`, [studentId]);
     return r.rows[0] ? r.rows[0].title : null;
   }
 

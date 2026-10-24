@@ -15,6 +15,10 @@ window.CeterisEssays = function (C) {
   const fmtClock = d => new Date(d).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
   const fmtWhen = d => new Date(d).toLocaleString([], { weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
   function fmtLeft(ms) {
+    if (ms >= 36 * 3600 * 1000) { // a take-home due days from now
+      const d = Math.floor(ms / 86400000), h = Math.floor((ms % 86400000) / 3600000);
+      return `${d}d ${h}h`;
+    }
     const s = Math.max(0, Math.ceil(ms / 1000));
     const h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60), sec = s % 60;
     return h ? `${h}:${String(m).padStart(2, '0')}:${String(sec).padStart(2, '0')}` : `${m}:${String(sec).padStart(2, '0')}`;
@@ -83,14 +87,18 @@ window.CeterisEssays = function (C) {
     bannerEl.innerHTML = open.map(e => `
       <div class="essay-banner">
         <span class="eb-icon">${PEN}</span>
-        <span class="eb-text"><strong>In-class essay open now:</strong> ${escapeHtml(e.title)} · until ${escapeHtml(fmtClock(e.closesAt))}</span>
+        <span class="eb-text">${e.mode === 'takehome'
+          ? (e.workStatus
+            ? `<strong>Take-home essay in progress:</strong> ${escapeHtml(e.title)}`
+            : `<strong>Take-home essay:</strong> ${escapeHtml(e.title)} · due ${escapeHtml(fmtWhen(e.dueAt))} · ${e.durationMinutes} minutes once you start`)
+          : `<strong>In-class essay open now:</strong> ${escapeHtml(e.title)} · until ${escapeHtml(fmtClock(e.closesAt))}`}</span>
         <span class="eb-left" role="timer" data-closes="${new Date(e.closesAt).getTime()}"></span>
         <button class="eb-btn" data-essay="${e.id}">${e.workStatus ? 'Continue' : 'Start'}</button>
       </div>`).join('');
     bannerEl.hidden = !open.length;
     cardEl.innerHTML = data.past.length ? `
       <div class="panel-card essays-card">
-        <div class="panel-head"><div class="panel-title">Your in-class essays</div></div>
+        <div class="panel-head"><div class="panel-title">Your essays</div></div>
         <div class="panel-body">${data.past.map(p => `
           <div class="ess-row">
             <div><div class="ess-title">${escapeHtml(p.title)}</div>
@@ -148,13 +156,18 @@ window.CeterisEssays = function (C) {
 
   function renderIntro(main, data) {
     const e = data.essay;
+    const takehome = e.mode === 'takehome', limit = e.durationMinutes || 20;
+    const minsToDue = Math.floor((new Date(e.dueAt || e.closesAt) - new Date(data.serverTime)) / 60000);
+    const short = takehome && minsToDue < limit;
     const who = data.instructorName && data.instructorName !== 'Your instructor' ? data.instructorName : 'Your instructor';
     main.innerHTML = `
       <div class="essay-narrow">
         <div class="panel-card">
           <div class="panel-head"><div class="panel-title">${escapeHtml(e.title)}</div></div>
           <div class="panel-body">
-            <div class="ei-clock"><span class="ei-clock-label">Time left</span><span class="ei-clock-val" role="timer" data-cd="bare" data-closes="${new Date(e.closesAt).getTime()}"></span><span class="ei-clock-end">Ends at ${escapeHtml(fmtClock(e.closesAt))}. The timer stays on screen while you write.</span></div>
+            ${takehome
+              ? `<div class="ei-clock"><span class="ei-clock-label">Time limit</span><span class="ei-clock-val">${limit}:00</span><span class="ei-clock-end">Due ${escapeHtml(fmtWhen(e.dueAt))}. Your ${limit} minutes start when you click Start, and you get one attempt.${short ? ` <strong>Only ${minsToDue} minutes are left before the due time, so that’s all you’ll get.</strong>` : ''}</span></div>`
+              : `<div class="ei-clock"><span class="ei-clock-label">Time left</span><span class="ei-clock-val" role="timer" data-cd="bare" data-closes="${new Date(e.closesAt).getTime()}"></span><span class="ei-clock-end">Ends at ${escapeHtml(fmtClock(e.closesAt))}. The timer stays on screen while you write.</span></div>`}
             <div class="md ei-prompt">${renderMarkdown(e.prompt)}</div>
             <h3>Before you start</h3>
             <ul class="ei-rules">
@@ -164,10 +177,13 @@ window.CeterisEssays = function (C) {
                 : '<li>The coach is turned off for this essay, so this one is all you.</li>'}
               <li>Paste is turned off, except that you can copy text from your own plan notes into your essay. Everything else should be typed by you.</li>
               <li>${escapeHtml(who)} will see your plan, your essay, how your draft developed over time (including what you pasted from your plan)${e.coachEnabled ? ', and your conversation with the coach' : ''}.</li>
-              <li>Your work saves as you type. Whatever you’ve written is submitted automatically at ${escapeHtml(fmtClock(e.closesAt))}.</li>
-              <li>If your device dies, finish on paper and hand it in.</li>
+              ${takehome
+                ? `<li><strong>One attempt, ${limit} minutes.</strong> Once you click Start, the clock runs even if you close the page; you can’t pause or start over. Make sure you have ${limit} quiet minutes first.</li>
+                   <li>Your work saves as you type. Whatever you’ve written is submitted automatically when your time is up${short ? '' : ' (or at the due time, if that comes first)'}.</li>`
+                : `<li>Your work saves as you type. Whatever you’ve written is submitted automatically at ${escapeHtml(fmtClock(e.closesAt))}.</li>`}
+              <li>${takehome ? 'If something goes wrong (your device dies or the connection drops), tell your instructor right away.' : 'If your device dies, finish on paper and hand it in.'}</li>
             </ul>
-            <div class="ei-actions"><button class="role-btn primary" id="ei-start">Start the essay</button></div>
+            <div class="ei-actions"><button class="role-btn primary" id="ei-start">${takehome ? `Start my ${short ? minsToDue : limit}-minute essay` : 'Start the essay'}</button></div>
             <div class="ew-error" id="ei-err" hidden></div>
           </div>
         </div>
@@ -284,7 +300,7 @@ window.CeterisEssays = function (C) {
     // from the student's own plan notes can be pasted into the draft (as plain text). ----
     const squash = t => String(t || '').replace(/\s+/g, ' ').trim();
     const pendingPastes = [];
-    const noPaste = e => { e.preventDefault(); toast('Paste is off for in-class essays. You can paste only text copied from one of your own plan notes into your essay.'); };
+    const noPaste = e => { e.preventDefault(); toast('Paste is off for these essays. You can paste only text copied from one of your own plan notes into your essay.'); };
     main.addEventListener('paste', e => {
       const ed = document.getElementById('ew-editor');
       const text = squash(e.clipboardData && e.clipboardData.getData('text/plain'));
@@ -707,13 +723,29 @@ window.CeterisEssays = function (C) {
     return m < 1 ? 'just now' : m < 60 ? `${m} min ago` : fmtClock(Date.now() - ms);
   };
 
-  function statusInfo(e, nowMs) {
-    if (!e.opensAt) return { cls: 'unscheduled', label: 'Not scheduled' };
-    const o = new Date(e.opensAt).getTime(), c = new Date(e.closesAt).getTime();
-    if (nowMs < o) return { cls: 'scheduled', label: `Scheduled · ${fmtWhen(o)}–${fmtClock(c)}` };
+  // One section's session: { cls, label }.
+  function statusInfo(row, nowMs) {
+    if (!row || !row.opensAt) return { cls: 'unscheduled', label: 'No time set' };
+    const o = new Date(row.opensAt).getTime(), c = new Date(row.closesAt).getTime();
+    if (row.mode === 'takehome') {
+      const lim = `${row.durationMinutes || 20} min`;
+      if (nowMs < o) return { cls: 'scheduled', label: `Take-home · ${lim} · from ${fmtWhen(o)}, due ${fmtWhen(c)}` };
+      if (nowMs < c) return { cls: 'open', label: `Take-home open · ${lim} · due ${fmtWhen(c)}` };
+      return { cls: 'closed', label: `Take-home closed · was due ${fmtWhen(c)}` };
+    }
+    if (nowMs < o) return { cls: 'scheduled', label: `${fmtWhen(o)}–${fmtClock(c)}` };
     if (nowMs < c) return { cls: 'open', label: `Open now · until ${fmtClock(c)}` };
     return { cls: 'closed', label: `Closed · ${fmtWhen(o)}` };
   }
+  // One pill per section that gets the essay.
+  function schedulePills(e, nowMs) {
+    if (!e.schedule.length) return `<span class="es-pill es-unscheduled">Not assigned to a section</span>`;
+    return e.schedule.map(row => {
+      const st = statusInfo(row, nowMs);
+      return `<span class="es-sched"><span class="es-sec">${escapeHtml(row.sectionName)}</span><span class="es-pill es-${st.cls}">${escapeHtml(st.label)}</span></span>`;
+    }).join('');
+  }
+  const mySections = () => (state.me && state.me.sections) || [];
 
   // ---- List ----
   async function renderInstructorEssays(flash) {
@@ -732,22 +764,21 @@ window.CeterisEssays = function (C) {
         <span class="dash-note">${flash ? escapeHtml(flash) : 'In-class mini-essays with the writing coach. Students see an essay only while it’s open.'}</span>
       </div>
       ${d.essays.length ? `<ul class="essay-list">${d.essays.map(e => {
-        const st = statusInfo(e, nowMs);
         const c = e.config;
         return `<li class="es-item">
           <div class="es-main">
             <button class="es-title" data-subs="${e.id}">${escapeHtml(e.title)}</button>
-            <div class="es-meta"><span class="es-pill es-${st.cls}">${escapeHtml(st.label)}</span>
-              <span>${c.stages.length} stage${c.stages.length === 1 ? '' : 's'} · ${c.targetWords.min}–${c.targetWords.max} words · coach ${e.coachEnabled ? 'on' : 'off'}</span></div>
+            <div class="es-scheds">${schedulePills(e, nowMs)}</div>
+            <div class="es-meta"><span>${c.stages.length} stage${c.stages.length === 1 ? '' : 's'} · ${c.targetWords.min}–${c.targetWords.max} words · coach ${e.coachEnabled ? 'on' : 'off'}${e.otherSections ? ` · also used in ${e.otherSections} section${e.otherSections === 1 ? '' : 's'} you don’t teach` : ''}</span></div>
           </div>
-          <div class="es-counts">${e.opensAt || e.started
-            ? `<strong>${e.submitted}</strong> of ${d.rosterSize} submitted${e.started - e.submitted ? `<br>${e.started - e.submitted} still writing` : ''}`
-            : '<span class="muted">Set a time to open it</span>'}</div>
+          <div class="es-counts">${e.schedule.some(x => x.opensAt) || e.started
+            ? `<strong>${e.submitted}</strong> of ${e.students} submitted${e.started - e.submitted ? `<br>${e.started - e.submitted} still writing` : ''}`
+            : `<span class="muted">${e.schedule.length ? 'Set a time to open it' : 'Pick sections and times'}</span>`}</div>
           <div class="es-actions">
             <button class="link-btn plain" data-subs="${e.id}">Submissions</button>
             <button class="link-btn plain" data-edit="${e.id}">Edit</button>
             <button class="link-btn plain" data-dup="${e.id}">Duplicate</button>
-            ${e.started ? '' : `<button class="remove-btn" data-del="${e.id}">Delete</button>`}
+            ${e.hasWork || e.otherSections ? '' : `<button class="remove-btn" data-del="${e.id}">Delete</button>`}
           </div>
         </li>`;
       }).join('')}</ul>` : '<div class="empty-state">No essays yet. Click New essay to set one up.</div>'}`;
@@ -757,7 +788,7 @@ window.CeterisEssays = function (C) {
     body.querySelectorAll('[data-dup]').forEach(b => {
       b.onclick = async () => {
         b.disabled = true;
-        try { const r = await iapi(`/api/essays/${b.dataset.dup}/duplicate`, { method: 'POST' }); renderEssayForm(r.essay.id, 'Copy made. Set a time, adjust anything you like, and save.'); }
+        try { const r = await iapi(`/api/essays/${b.dataset.dup}/duplicate`, { method: 'POST' }); renderEssayForm(r.essay.id, 'Copy made. Pick sections and times, adjust anything you like, and save.'); }
         catch (e) { b.disabled = false; }
       };
     });
@@ -774,7 +805,7 @@ window.CeterisEssays = function (C) {
   // ---- Setup form ----
   function blankEssay() {
     return {
-      title: '', prompt: '', brief: '', coachEnabled: true, opensAt: null, closesAt: null,
+      title: '', prompt: '', brief: '', coachEnabled: true, schedule: [],
       config: {
         stages: [{ key: '', title: 'Claim', minutes: 2, task: '', question: '' }],
         draftMinutes: 7, checkMinutes: 2, targetWords: { min: 250, max: 400 },
@@ -815,14 +846,9 @@ window.CeterisEssays = function (C) {
           <textarea class="ef-input" id="ef-prompt" rows="5"></textarea>
         </div>
         <div class="box">
-          <h2>Session</h2>
-          <p class="help">Students can open the essay only between these times (your computer’s time zone), and whatever they’ve written is submitted automatically at the end. Leave it unscheduled to prepare ahead.</p>
-          <div class="ef-row">
-            <div><label class="ef-label" for="ef-date">Date</label><input type="date" class="ef-input" id="ef-date"></div>
-            <div><label class="ef-label" for="ef-start">Starts</label><input type="time" class="ef-input" id="ef-start"></div>
-            <div><label class="ef-label" for="ef-end">Ends</label><input type="time" class="ef-input" id="ef-end"></div>
-            <div class="ef-row-btn"><button type="button" class="link-btn plain" id="ef-clear">Unschedule</button></div>
-          </div>
+          <h2>Sections and session times</h2>
+          <p class="help">Tick each section that gets this essay and set its class time (your computer’s time zone). Students in that section can open the essay only during their section’s time, and whatever they’ve written is submitted automatically at its end. Leave the time empty to prepare ahead.</p>
+          <div id="ef-sched"></div>
           <p class="ef-timing" id="ef-timing"></p>
           <div class="share-row ef-switch-row">
             <span class="share-label" id="ef-coach-label">Writing coach</span>
@@ -870,7 +896,6 @@ window.CeterisEssays = function (C) {
 
     const $ = s => document.getElementById(s);
     $('ef-title').value = m.title; $('ef-prompt').value = m.prompt; $('ef-brief').value = m.brief || '';
-    $('ef-date').value = toDate(m.opensAt); $('ef-start').value = toTime(m.opensAt); $('ef-end').value = toTime(m.closesAt);
     $('ef-draft').value = c.draftMinutes; $('ef-check').value = c.checkMinutes;
     $('ef-min').value = c.targetWords.min; $('ef-max').value = c.targetWords.max;
     $('ef-bonus-pts').value = c.bonus.points || ''; $('ef-bonus-desc').value = c.bonus.description || '';
@@ -884,23 +909,66 @@ window.CeterisEssays = function (C) {
     $('ef-coach').onclick = () => { coachOn = !coachOn; syncCoach(); };
     syncCoach();
     $('ef-back').onclick = $('ef-cancel').onclick = () => renderInstructorEssays();
-    $('ef-clear').onclick = () => { $('ef-date').value = $('ef-start').value = $('ef-end').value = ''; updateTiming(); };
-    ['ef-date', 'ef-start', 'ef-end', 'ef-draft', 'ef-check'].forEach(k => { $(k).addEventListener('input', updateTiming); });
+    ['ef-draft', 'ef-check'].forEach(k => { $(k).addEventListener('input', updateTiming); });
+
+    // One row per section you teach: a checkbox, In class or Take-home, then the times.
+    const secs = mySections();
+    const sched = new Map((m.schedule || []).map(x => [x.sectionId, x]));
+    const toLocal = d => d ? `${toDate(d)}T${toTime(d)}` : '';
+    $('ef-sched').innerHTML = secs.length ? secs.map(sec => {
+      const row = sched.get(sec.id);
+      const th = row && row.mode === 'takehome';
+      return `<div class="sched-row${row ? ' on' : ''}${th ? ' takehome' : ''}" data-sec="${sec.id}">
+        <div class="sched-top">
+          <label class="sched-check"><input type="checkbox" data-on${row ? ' checked' : ''}> <span>${escapeHtml(sec.name)}</span></label>
+          <label class="sched-mode"><span class="sr-only">Format for ${escapeHtml(sec.name)}</span>
+            <select class="select" data-mode><option value="class"${th ? '' : ' selected'}>In class</option><option value="takehome"${th ? ' selected' : ''}>Take-home (timed)</option></select></label>
+        </div>
+        <div class="sched-times sched-class">
+          <label><span class="sr-only">Date for ${escapeHtml(sec.name)}</span><input type="date" class="ef-input" data-date value="${row && !th ? toDate(row.opensAt) : ''}"></label>
+          <label><span class="sched-lbl">from</span><input type="time" class="ef-input" data-start value="${row && !th ? toTime(row.opensAt) : ''}" aria-label="Start time for ${escapeHtml(sec.name)}"></label>
+          <label><span class="sched-lbl">to</span><input type="time" class="ef-input" data-end value="${row && !th ? toTime(row.closesAt) : ''}" aria-label="End time for ${escapeHtml(sec.name)}"></label>
+          <button type="button" class="link-btn plain" data-clear>Clear time</button>
+        </div>
+        <div class="sched-times sched-take">
+          <label><span class="sched-lbl">available from</span><input type="datetime-local" class="ef-input" data-from value="${th ? toLocal(row.opensAt) : ''}" aria-label="Available from, ${escapeHtml(sec.name)}"></label>
+          <label><span class="sched-lbl">due</span><input type="datetime-local" class="ef-input" data-due value="${th ? toLocal(row.closesAt) : ''}" aria-label="Due, ${escapeHtml(sec.name)}"></label>
+          <label><span class="sched-lbl">time limit</span><input type="number" min="5" max="240" class="ef-input ef-num sched-mins" data-mins value="${th && row.durationMinutes ? row.durationMinutes : 20}" aria-label="Time limit in minutes, ${escapeHtml(sec.name)}"><span class="sched-lbl">min</span></label>
+          <button type="button" class="link-btn plain" data-clear>Clear time</button>
+        </div>
+        <div class="sched-note" data-note></div>
+      </div>`;
+    }).join('') : '<p class="ef-warn">You don’t have any sections yet. Create one in <strong>Sections &amp; students</strong>; you can save this essay now and assign it later.</p>';
+    $('ef-sched').querySelectorAll('.sched-row').forEach(r => {
+      const on = r.querySelector('[data-on]');
+      on.onchange = () => { r.classList.toggle('on', on.checked); updateTiming(); };
+      r.querySelector('[data-mode]').onchange = e => { r.classList.toggle('takehome', e.target.value === 'takehome'); if (!on.checked) { on.checked = true; r.classList.add('on'); } updateTiming(); };
+      r.querySelectorAll('.sched-times input').forEach(inp => inp.addEventListener('input', () => {
+        if (!on.checked) { on.checked = true; r.classList.add('on'); }
+        updateTiming();
+      }));
+      r.querySelectorAll('[data-clear]').forEach(b => { b.onclick = () => { r.querySelectorAll('.sched-times input:not([data-mins])').forEach(x => { x.value = ''; }); updateTiming(); }; });
+    });
 
     function updateTiming() {
       const total = c.stages.reduce((a, s) => a + (+s.minutes || 0), 0) + (+$('ef-draft').value || 0) + (+$('ef-check').value || 0);
-      const st = $('ef-start').value, en = $('ef-end').value;
-      let txt = `Planning, drafting and checking add up to ${total} minutes.`, warn = false;
-      if (st && en) {
-        const len = (new Date(`2000-01-01T${en}`) - new Date(`2000-01-01T${st}`)) / 60000;
-        if (len > 0) {
-          txt += ` The session runs ${len} minutes.`;
-          warn = total > len;
-          if (warn) txt += ' Students will be nudged along faster than the stage times suggest.';
+      $('ef-timing').textContent = `Planning, drafting and checking add up to ${total} minutes.`;
+      $('ef-sched').querySelectorAll('.sched-row').forEach(r => {
+        const note = r.querySelector('[data-note]');
+        let len = 0, empty;
+        if (r.classList.contains('takehome')) {
+          len = +r.querySelector('[data-mins]').value || 0;
+          empty = !r.querySelector('[data-due]').value;
+          note.textContent = !r.classList.contains('on') ? '' : empty ? 'No due time yet: hidden from students until you set one'
+            : `Each student gets one ${len}-minute attempt, any time before it’s due${total > len ? '; shorter than the stage times, so students will be nudged along faster' : ''}`;
+        } else {
+          const st = r.querySelector('[data-start]').value, en = r.querySelector('[data-end]').value;
+          len = st && en ? (new Date(`2000-01-01T${en}`) - new Date(`2000-01-01T${st}`)) / 60000 : 0;
+          empty = !st && !en;
+          note.textContent = !r.classList.contains('on') ? '' : len > 0 ? `${len}-minute class session${total > len ? ': shorter than the stage times, so students will be nudged along faster' : ''}` : (empty ? 'No time yet: hidden from students until you set one' : '');
         }
-      }
-      $('ef-timing').textContent = txt;
-      $('ef-timing').classList.toggle('warn', warn);
+        note.classList.toggle('warn', r.classList.contains('on') && len > 0 && total > len);
+      });
     }
 
     function renderStages() {
@@ -976,17 +1044,35 @@ window.CeterisEssays = function (C) {
       const err = $('ef-err');
       const showErr = msg => { err.textContent = msg; err.hidden = false; err.scrollIntoView({ block: 'center', behavior: 'smooth' }); };
       err.hidden = true;
-      const date = $('ef-date').value, st = $('ef-start').value, en = $('ef-end').value;
-      let opensAt = null, closesAt = null;
-      if (date || st || en) {
-        if (!(date && st && en)) return showErr('Set a date, a start time and an end time, or click Unschedule.');
-        opensAt = new Date(`${date}T${st}`); closesAt = new Date(`${date}T${en}`);
-        if (!(closesAt > opensAt)) return showErr('The end time must be after the start time.');
+      const schedule = [];
+      for (const r of $('ef-sched').querySelectorAll('.sched-row.on')) {
+        const name = r.querySelector('.sched-check span').textContent;
+        let opensAt = null, closesAt = null, mode = 'class', durationMinutes = null;
+        if (r.classList.contains('takehome')) {
+          mode = 'takehome';
+          const from = r.querySelector('[data-from]').value, due = r.querySelector('[data-due]').value;
+          durationMinutes = +r.querySelector('[data-mins]').value || 20;
+          if (durationMinutes < 5 || durationMinutes > 240) return showErr(`${name}: the time limit must be between 5 and 240 minutes.`);
+          if (from || due) {
+            if (!due) return showErr(`${name}: set a due time, or click Clear time.`);
+            closesAt = new Date(due);
+            opensAt = from ? new Date(from) : new Date();
+            if (!(closesAt > opensAt)) return showErr(`${name}: the due time must be after the time it becomes available.`);
+          }
+        } else {
+          const date = r.querySelector('[data-date]').value, st = r.querySelector('[data-start]').value, en = r.querySelector('[data-end]').value;
+          if (date || st || en) {
+            if (!(date && st && en)) return showErr(`${name}: set a date, a start time and an end time, or click Clear time.`);
+            opensAt = new Date(`${date}T${st}`); closesAt = new Date(`${date}T${en}`);
+            if (!(closesAt > opensAt)) return showErr(`${name}: the end time must be after the start time.`);
+          }
+        }
+        schedule.push({ sectionId: +r.dataset.sec, mode, durationMinutes, opensAt: opensAt && opensAt.toISOString(), closesAt: closesAt && closesAt.toISOString() });
       }
       const pts = +$('ef-bonus-pts').value || 0, bdesc = $('ef-bonus-desc').value.trim();
       const payload = {
         title: $('ef-title').value, prompt: $('ef-prompt').value, brief: $('ef-brief').value, coachEnabled: coachOn,
-        opensAt: opensAt && opensAt.toISOString(), closesAt: closesAt && closesAt.toISOString(),
+        schedule,
         config: {
           stages: c.stages.map(s => ({ key: s.key || '', title: s.title, minutes: +s.minutes || 0, task: s.task || '', question: s.question || '' })),
           draftMinutes: +$('ef-draft').value || 0, checkMinutes: +$('ef-check').value || 0,
@@ -999,8 +1085,8 @@ window.CeterisEssays = function (C) {
       const btn = $('ef-save'); btn.disabled = true; btn.textContent = 'Saving…';
       try {
         const r = await iapi(id ? `/api/essays/${id}` : '/api/essays', { method: id ? 'PUT' : 'POST', body: payload });
-        const st2 = statusInfo(r.essay, Date.now());
-        renderInstructorEssays(`Saved “${r.essay.title}”. ${st2.cls === 'unscheduled' ? 'It stays hidden from students until you set a time.' : st2.label + '.'}`);
+        const timed = r.essay.schedule.filter(x => x.opensAt).length;
+        renderInstructorEssays(`Saved “${r.essay.title}”. ${!r.essay.schedule.length ? 'It isn’t assigned to a section yet.' : timed ? `Scheduled for ${timed} section${timed === 1 ? '' : 's'}.` : 'It stays hidden from students until you set a time.'}`);
       } catch (e) {
         btn.disabled = false; btn.textContent = 'Save essay';
         showErr(e.message);
@@ -1014,26 +1100,32 @@ window.CeterisEssays = function (C) {
     submitted: ['Submitted', 'st-done'], auto_submitted: ['Submitted at end', 'st-auto']
   };
 
-  async function renderSubmissions(id) {
+  let subSection = 'all';
+  async function renderSubmissions(id, keepSection) {
     stopITimer();
+    if (!keepSection) subSection = 'all';
     const body = dashBody();
     body.innerHTML = `<button class="link-btn plain back-link" id="es-back">← All essays</button><div id="sub-wrap"><div class="empty-state">Loading submissions…</div></div>`;
     document.getElementById('es-back').onclick = () => renderInstructorEssays();
     let live = false;
     async function load() {
       let d;
-      try { d = await iapi(`/api/essays/${id}/submissions`); }
+      try { d = await iapi(`/api/essays/${id}/submissions${subSection !== 'all' ? `?section=${subSection}` : ''}`); }
       catch (e) { const w = document.getElementById('sub-wrap'); if (w) w.innerHTML = `<div class="empty-state">${escapeHtml(e.message)}</div>`; return; }
       const wrap = document.getElementById('sub-wrap');
       if (!wrap) return stopITimer();
       const nowMs = new Date(d.serverTime).getTime(), skew = nowMs - Date.now();
-      const e = d.essay, st = statusInfo(e, nowMs);
-      live = st.cls === 'open' || (st.cls === 'closed' && nowMs - new Date(e.closesAt).getTime() < 3 * 60000);
+      const e = d.essay;
+      const shown = e.schedule.filter(x => subSection === 'all' || String(x.sectionId) === String(subSection));
+      live = shown.some(x => x.opensAt && new Date(x.opensAt).getTime() <= nowMs && nowMs - new Date(x.closesAt).getTime() < 3 * 60000);
+      const multi = e.schedule.length > 1;
       const n = k => d.rows.filter(r => k.includes(r.status)).length;
       const order = d.rows.filter(r => r.status !== 'not_started').map(r => r.studentId);
       wrap.innerHTML = `
         <div class="box sub-head">
-          <div class="sub-title-row"><h2>${escapeHtml(e.title)}</h2><span class="es-pill es-${st.cls}">${escapeHtml(st.label)}</span>${st.cls === 'open' ? `<span class="sub-left" role="timer" data-closes="${new Date(e.closesAt).getTime()}"></span>` : ''}</div>
+          <div class="sub-title-row"><h2>${escapeHtml(e.title)}</h2>
+            ${multi ? `<label class="sr-only" for="sub-sec">Section</label><select id="sub-sec" class="select section-select"><option value="all">All my sections</option>${e.schedule.map(x => `<option value="${x.sectionId}"${String(x.sectionId) === String(subSection) ? ' selected' : ''}>${escapeHtml(x.sectionName)}</option>`).join('')}</select>` : ''}</div>
+          <div class="es-scheds sub-scheds">${shown.length ? shown.map(x => { const st = statusInfo(x, nowMs); return `<span class="es-sched"><span class="es-sec">${escapeHtml(x.sectionName)}</span><span class="es-pill es-${st.cls}">${escapeHtml(st.label)}</span>${st.cls === 'open' ? `<span class="sub-left" role="timer" data-closes="${new Date(x.closesAt).getTime()}"></span>` : ''}</span>`; }).join('') : '<span class="es-pill es-unscheduled">Not assigned to any of your sections</span>'}</div>
           <div class="stats sub-stats">
             <div class="stat"><div class="stat-num">${n(['submitted', 'auto_submitted'])}</div><div class="stat-label">submitted</div></div>
             <div class="stat"><div class="stat-num">${n(['writing'])}</div><div class="stat-label">still writing</div></div>
@@ -1052,16 +1144,18 @@ window.CeterisEssays = function (C) {
             const has = r.status !== 'not_started';
             const when = r.submittedAt ? 'Submitted ' + fmtClock(r.submittedAt) : r.updatedAt ? ago(Date.now() + skew - new Date(r.updatedAt).getTime()) : '—';
             return `<tr>
-              <td>${has ? `<button class="link-btn plain sub-name" data-paper="${escapeHtml(r.studentId)}">${escapeHtml(r.name || r.studentId)}</button>` : `<span>${escapeHtml(r.name || r.studentId)}</span>`}<div class="mono sub-id">${escapeHtml(r.studentId)}</div></td>
+              <td>${has ? `<button class="link-btn plain sub-name" data-paper="${escapeHtml(r.studentId)}">${escapeHtml(r.name || r.studentId)}</button>` : `<span>${escapeHtml(r.name || r.studentId)}</span>`}<div class="mono sub-id">${escapeHtml(r.studentId)}${multi && subSection === 'all' ? ` · ${r.sections.map(x => escapeHtml(x.name)).join(', ')}` : ''}</div></td>
               <td><span class="badge ${cls}">${label}</span></td>
               <td class="num">${has ? `${r.planDone}/${r.planTotal}` : '—'}</td>
               <td class="num">${has ? r.words : '—'}${has && r.pastedWordsKept ? `<div class="sub-id">${r.pastedWordsKept} from plan</div>` : ''}</td>
               <td>${has ? `${r.coachMessages} question${r.coachMessages === 1 ? '' : 's'}${r.wordingUsed ? '<div class="sub-id">wording suggestion used</div>' : ''}` : '—'}</td>
               <td class="sub-when">${escapeHtml(when)}</td>
             </tr>`;
-          }).join('')}</tbody></table></div>` : '<div class="empty-state" id="sub-table-wrap">Your roster is empty. Add students on the Roster tab.</div>'}`;
+          }).join('')}</tbody></table></div>` : `<div class="empty-state" id="sub-table-wrap">${e.schedule.length ? 'No students in these sections yet. Add them in Sections &amp; students.' : 'Assign this essay to a section (Edit essay) to see its students here.'}</div>`}`;
       document.getElementById('sub-refresh').onclick = load;
-      if (st.cls === 'open') startCountdowns(d.serverTime);
+      const sel = document.getElementById('sub-sec');
+      if (sel) sel.onchange = () => { subSection = sel.value; load(); };
+      if (wrap.querySelector('[data-closes]')) startCountdowns(d.serverTime);
       document.getElementById('sub-edit').onclick = () => renderEssayForm(id);
       wrap.querySelectorAll('[data-paper]').forEach(b => { b.onclick = () => renderPaper(id, b.dataset.paper, order); });
     }
@@ -1105,7 +1199,7 @@ window.CeterisEssays = function (C) {
         <article class="box paper">
           <header class="paper-head">
             <h2>${escapeHtml(name)}</h2>
-            <div class="t-meta"><span class="mono">${escapeHtml(d.student.studentId)}</span> · ${escapeHtml(e.title)}</div>
+            <div class="t-meta"><span class="mono">${escapeHtml(d.student.studentId)}</span>${d.student.section ? ` · ${escapeHtml(d.student.section)}` : ''} · ${escapeHtml(e.title)}</div>
             <div class="paper-status">${escapeHtml(status)} · started ${escapeHtml(fmtClock(w.startedAt))}</div>
           </header>
           <section><h3>Essay<span class="wc-tag">${w.words} word${w.words === 1 ? '' : 's'} · target ${c.targetWords.min}–${c.targetWords.max}</span></h3>
@@ -1138,7 +1232,7 @@ window.CeterisEssays = function (C) {
           <details class="box pp-prompt"><summary>Prompt</summary><div class="md">${renderMarkdown(e.prompt)}</div></details>
         </aside>
       </div>`;
-    document.getElementById('pp-back').onclick = () => renderSubmissions(id);
+    document.getElementById('pp-back').onclick = () => renderSubmissions(id, true);
     document.getElementById('pp-print').onclick = () => window.print();
     if (prev) document.getElementById('pp-prev').onclick = () => renderPaper(id, prev, order);
     if (next) document.getElementById('pp-next').onclick = () => renderPaper(id, next, order);

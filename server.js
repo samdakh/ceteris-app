@@ -64,8 +64,69 @@ async function initDB() {
     -- Each student creates a password at first login; the instructor can reset it (back to NULL).
     ALTER TABLE roster ADD COLUMN IF NOT EXISTS password_hash TEXT;
     ALTER TABLE roster ADD COLUMN IF NOT EXISTS password_set_at TIMESTAMPTZ;
+
+    -- Instructor accounts. The first one (the admin) logs in with INSTRUCTOR_PASSWORD
+    -- until they choose their own password.
+    CREATE TABLE IF NOT EXISTS instructors (
+      id SERIAL PRIMARY KEY,
+      username TEXT UNIQUE NOT NULL,
+      name TEXT NOT NULL,
+      password_hash TEXT,
+      password_set_at TIMESTAMPTZ,
+      use_env_password BOOLEAN NOT NULL DEFAULT false,
+      is_admin BOOLEAN NOT NULL DEFAULT false,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    );
+    -- Course sections. Students and instructors can each belong to several.
+    CREATE TABLE IF NOT EXISTS sections (
+      id SERIAL PRIMARY KEY,
+      name TEXT NOT NULL,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    );
+    CREATE TABLE IF NOT EXISTS section_instructors (
+      section_id INT NOT NULL REFERENCES sections(id) ON DELETE CASCADE,
+      instructor_id INT NOT NULL REFERENCES instructors(id) ON DELETE CASCADE,
+      PRIMARY KEY (section_id, instructor_id)
+    );
+    CREATE TABLE IF NOT EXISTS section_students (
+      section_id INT NOT NULL REFERENCES sections(id) ON DELETE CASCADE,
+      student_id TEXT NOT NULL REFERENCES roster(student_id) ON DELETE CASCADE,
+      added_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+      PRIMARY KEY (section_id, student_id)
+    );
+    CREATE INDEX IF NOT EXISTS section_students_by_student ON section_students (student_id);
+    ALTER TABLE auth_sessions ADD COLUMN IF NOT EXISTS instructor_id INT;
+    CREATE TABLE IF NOT EXISTS app_flags (key TEXT PRIMARY KEY);
   `);
   await pool.query('DELETE FROM auth_sessions WHERE expires_at < now()');
+  // Sessions from the single-password days have no instructor attached: end them.
+  await pool.query(`DELETE FROM auth_sessions WHERE role='instructor' AND instructor_id IS NULL`);
+
+  // First run: the admin account, named after INSTRUCTOR_NAME.
+  const count = await pool.query('SELECT COUNT(*)::int AS n FROM instructors');
+  if (!count.rows[0].n) {
+    await pool.query(`INSERT INTO instructors (username, name, use_env_password, is_admin) VALUES ($1, $2, true, true)`,
+      [normalizeUsername(process.env.INSTRUCTOR_USERNAME || 'admin'), INSTRUCTOR_NAME === 'Your instructor' ? 'Instructor' : INSTRUCTOR_NAME]);
+  }
+  // Locked out? Set RESET_ADMIN_PASSWORD=true on the server and restart: the admin logs in
+  // with INSTRUCTOR_PASSWORD again (then remove the setting).
+  if (String(process.env.RESET_ADMIN_PASSWORD).toLowerCase() === 'true') {
+    await pool.query(`UPDATE instructors SET use_env_password=true, password_hash=NULL, password_set_at=NULL
+                      WHERE id = (SELECT id FROM instructors WHERE is_admin ORDER BY id LIMIT 1)`);
+    console.log('Ceteris: admin password reset to INSTRUCTOR_PASSWORD (remove RESET_ADMIN_PASSWORD now).');
+  }
+  // One-time move to sections: everyone already on the roster goes into "My class",
+  // taught by the admin.
+  const moved = await pool.query(`INSERT INTO app_flags (key) VALUES ('sections_v1') ON CONFLICT DO NOTHING RETURNING key`);
+  if (moved.rows[0]) {
+    const anyStudents = await pool.query('SELECT 1 FROM roster LIMIT 1');
+    const anySections = await pool.query('SELECT 1 FROM sections LIMIT 1');
+    if (anyStudents.rows[0] && !anySections.rows[0]) {
+      const sec = await pool.query(`INSERT INTO sections (name) VALUES ('My class') RETURNING id`);
+      await pool.query(`INSERT INTO section_instructors (section_id, instructor_id) SELECT $1, id FROM instructors WHERE is_admin`, [sec.rows[0].id]);
+      await pool.query(`INSERT INTO section_students (section_id, student_id) SELECT $1, student_id FROM roster`, [sec.rows[0].id]);
+    }
+  }
 }
 
 // Name shown to students on notes the instructor posts, e.g. "Prof. Dakhlia".
@@ -103,7 +164,12 @@ function normalizeId(raw) {
   return String(raw || '').trim().toUpperCase();
 }
 
-// --- Student passwords (scrypt, salted; only the hash is stored) -------------------
+const USERNAME_PATTERN = /^[a-z0-9][a-z0-9._@-]{1,59}$/;
+function normalizeUsername(raw) {
+  return String(raw || '').trim().toLowerCase();
+}
+
+// --- Passwords (scrypt, salted; only the hash is stored) ---------------------------
 const MIN_PASSWORD = 8;
 function hashPassword(password) {
   return new Promise((resolve, reject) => {
@@ -132,12 +198,12 @@ function hashToken(token) {
   return crypto.createHash('sha256').update(token).digest('hex');
 }
 
-async function createSession(role, studentId, days) {
+async function createSession(role, studentId, days, instructorId) {
   const token = crypto.randomBytes(32).toString('hex');
   await pool.query(
-    `INSERT INTO auth_sessions (token_hash, role, student_id, expires_at)
-     VALUES ($1, $2, $3, now() + ($4 || ' days')::interval)`,
-    [hashToken(token), role, studentId, String(days)]
+    `INSERT INTO auth_sessions (token_hash, role, student_id, expires_at, instructor_id)
+     VALUES ($1, $2, $3, now() + ($4 || ' days')::interval, $5)`,
+    [hashToken(token), role, studentId, String(days), instructorId || null]
   );
   return token;
 }
@@ -155,7 +221,8 @@ async function requireStudent(req, res, next) {
     const result = await pool.query(
       `SELECT r.student_id, r.name, r.share_transcripts FROM auth_sessions s
        JOIN roster r ON r.student_id = s.student_id
-       WHERE s.token_hash = $1 AND s.role = 'student' AND s.expires_at > now() AND r.password_hash IS NOT NULL`,
+       WHERE s.token_hash = $1 AND s.role = 'student' AND s.expires_at > now() AND r.password_hash IS NOT NULL
+         AND EXISTS (SELECT 1 FROM section_students ss WHERE ss.student_id = r.student_id)`,
       [hashToken(token)]
     );
     if (!result.rows[0]) return res.status(401).json({ error: 'Your session has ended. Please log in again.' });
@@ -172,15 +239,46 @@ async function requireInstructor(req, res, next) {
   if (!token) return res.status(401).json({ error: 'Not authenticated as instructor' });
   try {
     const result = await pool.query(
-      `SELECT 1 FROM auth_sessions WHERE token_hash = $1 AND role = 'instructor' AND expires_at > now()`,
+      `SELECT i.id, i.username, i.name, i.is_admin FROM auth_sessions s JOIN instructors i ON i.id = s.instructor_id
+       WHERE s.token_hash = $1 AND s.role = 'instructor' AND s.expires_at > now()`,
       [hashToken(token)]
     );
     if (!result.rows[0]) return res.status(401).json({ error: 'Not authenticated as instructor' });
+    const i = result.rows[0];
+    req.instructor = { id: i.id, username: i.username, name: i.name, isAdmin: i.is_admin };
     next();
   } catch (e) {
     console.error('Ceteris: instructor auth failed —', e.message);
     res.status(500).json({ error: 'Could not verify login.' });
   }
+}
+
+// --- Who may see what -------------------------------------------------------------
+// Instructors see only students in sections they teach.
+async function teaches(instructorId, sectionId) {
+  const r = await pool.query('SELECT 1 FROM section_instructors WHERE instructor_id=$1 AND section_id=$2', [instructorId, sectionId]);
+  return !!r.rows[0];
+}
+async function canSeeStudent(instructorId, studentId) {
+  const r = await pool.query(`SELECT 1 FROM section_students ss JOIN section_instructors si ON si.section_id = ss.section_id
+                              WHERE si.instructor_id=$1 AND ss.student_id=$2 LIMIT 1`, [instructorId, studentId]);
+  return !!r.rows[0];
+}
+// SQL condition: student column `col` is in one of instructor $i's sections (optionally one section $s).
+const visibleTo = (col, i, sec) => `EXISTS (SELECT 1 FROM section_students vss JOIN section_instructors vsi ON vsi.section_id = vss.section_id
+  WHERE vss.student_id = ${col} AND vsi.instructor_id = ${i}${sec ? ` AND (${sec}::int IS NULL OR vss.section_id = ${sec}::int)` : ''})`;
+// Optional ?section=ID, which must be one of the instructor's sections.
+async function sectionFilter(req, res) {
+  if (req.query.section == null || req.query.section === '' || req.query.section === 'all') return { id: null };
+  const id = parseInt(req.query.section, 10);
+  if (!Number.isInteger(id) || !(await teaches(req.instructor.id, id))) { res.status(404).json({ error: 'Section not found.' }); return null; }
+  return { id };
+}
+// Display names of a student's instructors, for notes and the sharing switch.
+async function instructorNamesFor(studentId) {
+  const r = await pool.query(`SELECT DISTINCT i.name FROM section_students ss JOIN section_instructors si ON si.section_id = ss.section_id
+                              JOIN instructors i ON i.id = si.instructor_id WHERE ss.student_id=$1 ORDER BY i.name`, [studentId]);
+  return r.rows.map(x => x.name);
 }
 
 // Simple brute-force guard: 30 failed logins per IP per 15 minutes. Deliberately generous,
@@ -362,7 +460,7 @@ async function earlierNotes(studentId, today) {
   r.rows.forEach(row => {
     const question = firstQuestion(row.transcript);
     row.transcript.filter(m => m.role === 'instructor').reverse().forEach(m =>
-      notes.push({ id: m.id, day: row.day, content: m.content, at: m.at || null, isNew: m.seen === false, question }));
+      notes.push({ id: m.id, day: row.day, content: m.content, at: m.at || null, isNew: m.seen === false, question, author: m.author || null }));
   });
   return notes;
 }
@@ -379,7 +477,7 @@ async function markNotesSeen(studentId) {
 
 // What a student's browser receives for a stored message: no internal bookkeeping fields.
 function forStudent(m) {
-  return { role: m.role, content: m.content };
+  return m.role === 'instructor' ? { role: m.role, content: m.content, author: m.author || null } : { role: m.role, content: m.content };
 }
 
 async function loadToday(studentId) {
@@ -405,7 +503,8 @@ app.post('/api/student-login', async (req, res) => {
   const password = req.body && req.body.password;
   const newPassword = req.body && req.body.newPassword;
   try {
-    const r = await pool.query('SELECT student_id, name, password_hash FROM roster WHERE student_id=$1', [studentId]);
+    const r = await pool.query(`SELECT student_id, name, password_hash FROM roster r WHERE student_id=$1
+                                AND EXISTS (SELECT 1 FROM section_students ss WHERE ss.student_id = r.student_id)`, [studentId]);
     const row = r.rows[0];
     if (!row) {
       recordFailure(req.ip);
@@ -469,12 +568,14 @@ app.post('/api/logout', async (req, res) => {
 app.get('/api/session', requireStudent, async (req, res) => {
   try {
     const { day, transcript, summary } = await loadToday(req.student.id);
+    const names = await instructorNamesFor(req.student.id);
     res.json({
       transcript: transcript.map(forStudent),
       panel: studentPanel(summary),
       stats: await studentStats(req.student.id, transcript),
       notes: await earlierNotes(req.student.id, day),
-      instructorName: INSTRUCTOR_NAME,
+      instructorName: names.length === 1 ? names[0] : names.length ? 'your instructors' : INSTRUCTOR_NAME,
+      instructorNames: names,
       shareTranscripts: req.student.shareTranscripts
     });
     markNotesSeen(req.student.id).catch(e => console.error('Ceteris: mark seen failed —', e.message));
@@ -562,44 +663,293 @@ app.post('/api/session/summarize', requireStudent, async (req, res) => {
 
 // --- Instructor routes ------------------------------------------------------------
 
+// Instructor login: username + password. Like students, a new instructor (or one whose
+// password was reset) creates a password at first login. The admin account uses
+// INSTRUCTOR_PASSWORD until they choose their own. A missing username means "admin".
 app.post('/api/instructor-login', async (req, res) => {
   if (tooManyFailures(req.ip)) {
     return res.status(429).json({ error: 'Too many attempts. Please wait 15 minutes and try again.' });
   }
-  const { password } = req.body || {};
-  if (!process.env.INSTRUCTOR_PASSWORD) {
-    return res.status(500).json({ error: 'INSTRUCTOR_PASSWORD is not set on the server' });
-  }
-  if (password !== process.env.INSTRUCTOR_PASSWORD) {
-    recordFailure(req.ip);
-    return res.status(401).json({ error: 'Incorrect password' });
-  }
+  const b = req.body || {};
+  const username = normalizeUsername(b.username || process.env.INSTRUCTOR_USERNAME || 'admin');
+  const lockKey = 'instructor:' + username;
   try {
-    const token = await createSession('instructor', null, 14);
-    res.json({ token });
+    const r = await pool.query('SELECT * FROM instructors WHERE username=$1', [username]);
+    const row = r.rows[0];
+    const bad = () => { recordFailure(req.ip); recordIdFailure(lockKey); return res.status(401).json({ error: 'Wrong username or password.' }); };
+    if (!row) return bad();
+    if (idLocked(lockKey)) return res.status(429).json({ error: 'Too many wrong passwords for this account. Wait 15 minutes, or ask the admin to reset it.' });
+    if (row.use_env_password) {
+      const envPw = process.env.INSTRUCTOR_PASSWORD;
+      if (!envPw) return res.status(500).json({ error: 'INSTRUCTOR_PASSWORD is not set on the server.' });
+      if (b.password == null || b.password === '') return res.json({ needsPassword: true });
+      const a = crypto.createHash('sha256').update(String(b.password)).digest();
+      const e = crypto.createHash('sha256').update(envPw).digest();
+      if (!crypto.timingSafeEqual(a, e)) return bad();
+    } else if (!row.password_hash) {
+      if (b.newPassword == null || b.newPassword === '') return res.json({ needsNewPassword: true });
+      const problem = instructorPasswordProblem(b.newPassword, username);
+      if (problem) return res.status(400).json({ error: problem, needsNewPassword: true });
+      const set = await pool.query(`UPDATE instructors SET password_hash=$2, password_set_at=now() WHERE id=$1 AND password_hash IS NULL AND NOT use_env_password`,
+        [row.id, await hashPassword(b.newPassword)]);
+      if (!set.rowCount) return res.status(409).json({ error: 'A password was just set for this account. Log in with it.', needsPassword: true });
+    } else {
+      if (b.password == null || b.password === '') return res.json({ needsPassword: true });
+      if (!(await checkPassword(String(b.password), row.password_hash))) return bad();
+    }
+    failedById.delete(lockKey);
+    const token = await createSession('instructor', null, 14, row.id);
+    res.json({ token, instructor: { id: row.id, username: row.username, name: row.name, isAdmin: row.is_admin } });
   } catch (e) {
     console.error('Ceteris: instructor login failed —', e.message);
     res.status(500).json({ error: 'Login is unavailable right now.' });
   }
 });
 
+function instructorPasswordProblem(pw, username) {
+  if (typeof pw !== 'string' || pw.length < 10) return 'Choose a password of at least 10 characters.';
+  if (pw.length > 200) return 'That password is too long.';
+  if (pw.toLowerCase().includes(username) || /^(.)\1+$/.test(pw) || /^(password|1234567890|qwertyuiop)/i.test(pw)) return 'Choose a password that is harder to guess (not your username).';
+  return null;
+}
+
+// --- The signed-in instructor -------------------------------------------------------
+
+async function mySections(instructorId) {
+  const r = await pool.query(`
+    SELECT s.id, s.name,
+      (SELECT COUNT(*)::int FROM section_students x WHERE x.section_id = s.id) AS students,
+      (SELECT json_agg(json_build_object('id', i.id, 'name', i.name) ORDER BY i.name)
+         FROM section_instructors y JOIN instructors i ON i.id = y.instructor_id WHERE y.section_id = s.id) AS instructors
+    FROM sections s JOIN section_instructors si ON si.section_id = s.id
+    WHERE si.instructor_id = $1 ORDER BY s.name, s.id`, [instructorId]);
+  return r.rows;
+}
+
+app.get('/api/instructor/me', requireInstructor, async (req, res) => {
+  try {
+    const r = await pool.query('SELECT use_env_password FROM instructors WHERE id=$1', [req.instructor.id]);
+    res.json({ ...req.instructor, usesSetupPassword: r.rows[0].use_env_password, sections: await mySections(req.instructor.id) });
+  } catch (e) { console.error('Ceteris: me failed —', e.message); res.status(500).json({ error: 'Could not load your account.' }); }
+});
+
+// Change your own display name, username or password (the password needs the current one).
+app.put('/api/instructor/me', requireInstructor, async (req, res) => {
+  const b = req.body || {};
+  try {
+    const row = (await pool.query('SELECT * FROM instructors WHERE id=$1', [req.instructor.id])).rows[0];
+    const name = b.name != null ? String(b.name).trim().slice(0, 80) : row.name;
+    const username = b.username != null ? normalizeUsername(b.username) : row.username;
+    if (!name) return res.status(400).json({ error: 'Enter the name students will see, e.g. Prof. Dakhlia.' });
+    if (!USERNAME_PATTERN.test(username)) return res.status(400).json({ error: 'Usernames are 2–60 characters: letters, digits, and . _ @ -' });
+    if (username !== row.username) {
+      const taken = await pool.query('SELECT 1 FROM instructors WHERE username=$1 AND id<>$2', [username, row.id]);
+      if (taken.rows[0]) return res.status(409).json({ error: 'That username is taken.' });
+    }
+    let hash = null;
+    if (b.newPassword) {
+      const current = String(b.currentPassword || '');
+      const ok = row.use_env_password
+        ? current === process.env.INSTRUCTOR_PASSWORD
+        : await checkPassword(current, row.password_hash);
+      if (!ok) return res.status(400).json({ error: 'Your current password is not right.' });
+      const problem = instructorPasswordProblem(String(b.newPassword), username);
+      if (problem) return res.status(400).json({ error: problem });
+      hash = await hashPassword(String(b.newPassword));
+    }
+    await pool.query(`UPDATE instructors SET name=$2, username=$3,
+                        password_hash = COALESCE($4, password_hash),
+                        password_set_at = CASE WHEN $4::text IS NULL THEN password_set_at ELSE now() END,
+                        use_env_password = CASE WHEN $4::text IS NULL THEN use_env_password ELSE false END
+                      WHERE id=$1`, [row.id, name, username, hash]);
+    res.json({ ok: true, name, username, passwordChanged: !!hash });
+  } catch (e) { console.error('Ceteris: account update failed —', e.message); res.status(500).json({ error: 'Could not save your account.' }); }
+});
+
+// --- Instructor accounts (admin) -------------------------------------------------------
+
+function requireAdmin(req, res, next) {
+  if (!req.instructor || !req.instructor.isAdmin) return res.status(403).json({ error: 'Only an admin can manage instructor accounts.' });
+  next();
+}
+
+// Everyone can see the list of names (to add a co-instructor to a section); details are admin-only.
+app.get('/api/instructors', requireInstructor, async (req, res) => {
+  try {
+    const r = await pool.query(`
+      SELECT i.id, i.username, i.name, i.is_admin, i.password_set_at, i.use_env_password,
+        (SELECT json_agg(json_build_object('id', s.id, 'name', s.name) ORDER BY s.name)
+           FROM section_instructors si JOIN sections s ON s.id = si.section_id WHERE si.instructor_id = i.id) AS sections
+      FROM instructors i ORDER BY i.name, i.id`);
+    res.json({
+      instructors: r.rows.map(i => req.instructor.isAdmin
+        ? { id: i.id, username: i.username, name: i.name, isAdmin: i.is_admin, passwordSet: !!i.password_set_at || i.use_env_password, sections: i.sections || [] }
+        : { id: i.id, name: i.name })
+    });
+  } catch (e) { console.error('Ceteris: instructor list failed —', e.message); res.status(500).json({ error: 'Could not load instructors.' }); }
+});
+
+app.post('/api/instructors', requireInstructor, requireAdmin, async (req, res) => {
+  const b = req.body || {};
+  const username = normalizeUsername(b.username);
+  const name = String(b.name || '').trim().slice(0, 80);
+  if (!USERNAME_PATTERN.test(username)) return res.status(400).json({ error: 'Usernames are 2–60 characters: letters, digits, and . _ @ - (an email address works).' });
+  if (!name) return res.status(400).json({ error: 'Enter the name students will see, e.g. Prof. Rivera.' });
+  try {
+    const r = await pool.query(`INSERT INTO instructors (username, name, is_admin) VALUES ($1, $2, $3) ON CONFLICT (username) DO NOTHING RETURNING id`,
+      [username, name, !!b.isAdmin]);
+    if (!r.rows[0]) return res.status(409).json({ error: 'That username is taken.' });
+    res.json({ id: r.rows[0].id });
+  } catch (e) { console.error('Ceteris: add instructor failed —', e.message); res.status(500).json({ error: 'Could not add the instructor.' }); }
+});
+
+app.post('/api/instructors/:id/reset-password', requireInstructor, requireAdmin, async (req, res) => {
+  const id = parseInt(req.params.id, 10);
+  try {
+    const r = await pool.query(`UPDATE instructors SET password_hash=NULL, password_set_at=NULL, use_env_password=false WHERE id=$1 RETURNING username`, [id]);
+    if (!r.rows[0]) return res.status(404).json({ error: 'Instructor not found.' });
+    await pool.query(`DELETE FROM auth_sessions WHERE role='instructor' AND instructor_id=$1`, [id]);
+    failedById.delete('instructor:' + r.rows[0].username);
+    res.json({ ok: true });
+  } catch (e) { console.error('Ceteris: instructor reset failed —', e.message); res.status(500).json({ error: 'Could not reset that password.' }); }
+});
+
+app.put('/api/instructors/:id', requireInstructor, requireAdmin, async (req, res) => {
+  const id = parseInt(req.params.id, 10);
+  const b = req.body || {};
+  try {
+    if (b.isAdmin === false) {
+      const admins = await pool.query('SELECT COUNT(*)::int AS n FROM instructors WHERE is_admin AND id<>$1', [id]);
+      if (!admins.rows[0].n) return res.status(400).json({ error: 'Keep at least one admin.' });
+    }
+    const name = b.name != null ? String(b.name).trim().slice(0, 80) : null;
+    const r = await pool.query(`UPDATE instructors SET name = COALESCE(NULLIF($2, ''), name), is_admin = COALESCE($3, is_admin) WHERE id=$1 RETURNING id`,
+      [id, name, typeof b.isAdmin === 'boolean' ? b.isAdmin : null]);
+    if (!r.rows[0]) return res.status(404).json({ error: 'Instructor not found.' });
+    res.json({ ok: true });
+  } catch (e) { console.error('Ceteris: instructor update failed —', e.message); res.status(500).json({ error: 'Could not update the instructor.' }); }
+});
+
+// Removing an account takes the instructor off their sections. A section left with no
+// instructor stays (with its students), and the admin can assign someone to it.
+app.delete('/api/instructors/:id', requireInstructor, requireAdmin, async (req, res) => {
+  const id = parseInt(req.params.id, 10);
+  if (id === req.instructor.id) return res.status(400).json({ error: 'You can’t remove your own account.' });
+  try {
+    await pool.query(`DELETE FROM auth_sessions WHERE role='instructor' AND instructor_id=$1`, [id]);
+    const r = await pool.query('DELETE FROM instructors WHERE id=$1 RETURNING id', [id]);
+    if (!r.rows[0]) return res.status(404).json({ error: 'Instructor not found.' });
+    res.json({ ok: true });
+  } catch (e) { console.error('Ceteris: instructor delete failed —', e.message); res.status(500).json({ error: 'Could not remove the instructor.' }); }
+});
+
+// --- Sections -------------------------------------------------------------------------
+
+// Your sections; for an admin, ?all=1 lists every section (to assign instructors).
+app.get('/api/sections', requireInstructor, async (req, res) => {
+  try {
+    if (req.query.all === '1' && req.instructor.isAdmin) {
+      const r = await pool.query(`
+        SELECT s.id, s.name,
+          (SELECT COUNT(*)::int FROM section_students x WHERE x.section_id = s.id) AS students,
+          (SELECT json_agg(json_build_object('id', i.id, 'name', i.name) ORDER BY i.name)
+             FROM section_instructors y JOIN instructors i ON i.id = y.instructor_id WHERE y.section_id = s.id) AS instructors
+        FROM sections s ORDER BY s.name, s.id`);
+      return res.json({ sections: r.rows.map(x => ({ ...x, instructors: x.instructors || [] })) });
+    }
+    res.json({ sections: (await mySections(req.instructor.id)).map(x => ({ ...x, instructors: x.instructors || [] })) });
+  } catch (e) { console.error('Ceteris: sections failed —', e.message); res.status(500).json({ error: 'Could not load sections.' }); }
+});
+
+app.post('/api/sections', requireInstructor, async (req, res) => {
+  const name = String((req.body && req.body.name) || '').trim().slice(0, 120);
+  if (!name) return res.status(400).json({ error: 'Name the section, e.g. ECO 201-01 (Fall 2026).' });
+  try {
+    const r = await pool.query('INSERT INTO sections (name) VALUES ($1) RETURNING id', [name]);
+    await pool.query('INSERT INTO section_instructors (section_id, instructor_id) VALUES ($1, $2)', [r.rows[0].id, req.instructor.id]);
+    res.json({ id: r.rows[0].id, name });
+  } catch (e) { console.error('Ceteris: add section failed —', e.message); res.status(500).json({ error: 'Could not create the section.' }); }
+});
+
+// A section's instructors (or an admin) can rename it and change who teaches it.
+async function canManageSection(req, sectionId) {
+  return req.instructor.isAdmin || teaches(req.instructor.id, sectionId);
+}
+
+app.put('/api/sections/:id', requireInstructor, async (req, res) => {
+  const id = parseInt(req.params.id, 10);
+  const name = String((req.body && req.body.name) || '').trim().slice(0, 120);
+  if (!name) return res.status(400).json({ error: 'The section needs a name.' });
+  try {
+    if (!(await canManageSection(req, id))) return res.status(404).json({ error: 'Section not found.' });
+    await pool.query('UPDATE sections SET name=$2 WHERE id=$1', [id, name]);
+    res.json({ ok: true });
+  } catch (e) { console.error('Ceteris: rename section failed —', e.message); res.status(500).json({ error: 'Could not rename the section.' }); }
+});
+
+// Only an empty section can be deleted, so no student loses access by accident.
+app.delete('/api/sections/:id', requireInstructor, async (req, res) => {
+  const id = parseInt(req.params.id, 10);
+  try {
+    if (!(await canManageSection(req, id))) return res.status(404).json({ error: 'Section not found.' });
+    const n = await pool.query('SELECT COUNT(*)::int AS n FROM section_students WHERE section_id=$1', [id]);
+    if (n.rows[0].n) return res.status(409).json({ error: 'Remove the students from this section first.' });
+    await pool.query('DELETE FROM sections WHERE id=$1', [id]);
+    res.json({ ok: true });
+  } catch (e) { console.error('Ceteris: delete section failed —', e.message); res.status(500).json({ error: 'Could not delete the section.' }); }
+});
+
+app.post('/api/sections/:id/instructors', requireInstructor, async (req, res) => {
+  const id = parseInt(req.params.id, 10);
+  const instructorId = parseInt(req.body && req.body.instructorId, 10);
+  try {
+    if (!(await canManageSection(req, id))) return res.status(404).json({ error: 'Section not found.' });
+    const i = await pool.query('SELECT 1 FROM instructors WHERE id=$1', [instructorId]);
+    if (!i.rows[0]) return res.status(404).json({ error: 'Instructor not found.' });
+    await pool.query('INSERT INTO section_instructors (section_id, instructor_id) VALUES ($1, $2) ON CONFLICT DO NOTHING', [id, instructorId]);
+    res.json({ ok: true });
+  } catch (e) { console.error('Ceteris: add co-instructor failed —', e.message); res.status(500).json({ error: 'Could not add the instructor.' }); }
+});
+
+app.delete('/api/sections/:id/instructors/:instructorId', requireInstructor, async (req, res) => {
+  const id = parseInt(req.params.id, 10), instructorId = parseInt(req.params.instructorId, 10);
+  try {
+    if (!(await canManageSection(req, id))) return res.status(404).json({ error: 'Section not found.' });
+    const n = await pool.query('SELECT COUNT(*)::int AS n FROM section_instructors WHERE section_id=$1', [id]);
+    if (n.rows[0].n <= 1 && !req.instructor.isAdmin) return res.status(400).json({ error: 'A section needs at least one instructor.' });
+    await pool.query('DELETE FROM section_instructors WHERE section_id=$1 AND instructor_id=$2', [id, instructorId]);
+    res.json({ ok: true });
+  } catch (e) { console.error('Ceteris: remove co-instructor failed —', e.message); res.status(500).json({ error: 'Could not remove the instructor.' }); }
+});
+
+// --- Roster (students, by section) ----------------------------------------------------
+
+// Students in your sections (or one section with ?section=ID), with the sections of yours they're in.
 app.get('/api/roster', requireInstructor, async (req, res) => {
+  const f = await sectionFilter(req, res);
+  if (!f) return;
   try {
     const result = await pool.query(`
-      SELECT r.student_id, r.name, r.password_set_at, u.last_seen
+      SELECT r.student_id, r.name, r.password_set_at, u.last_seen,
+        (SELECT json_agg(json_build_object('id', s.id, 'name', s.name) ORDER BY s.name)
+           FROM section_students ss JOIN sections s ON s.id = ss.section_id
+           JOIN section_instructors si ON si.section_id = s.id AND si.instructor_id = $1
+          WHERE ss.student_id = r.student_id) AS sections
       FROM roster r LEFT JOIN usage_stats u ON u.student_id = r.student_id
+      WHERE ${visibleTo('r.student_id', '$1', '$2')}
       ORDER BY r.name NULLS LAST, r.student_id
-    `);
-    res.json({ rows: result.rows.map(r => ({ studentId: r.student_id, name: r.name, lastSeen: r.last_seen, passwordSetAt: r.password_set_at })) });
+    `, [req.instructor.id, f.id]);
+    res.json({ rows: result.rows.map(r => ({ studentId: r.student_id, name: r.name, lastSeen: r.last_seen, passwordSetAt: r.password_set_at, sections: r.sections || [] })) });
   } catch (e) {
     console.error('Ceteris: roster fetch failed —', e.message);
     res.status(500).json({ error: 'Could not load the roster.' });
   }
 });
 
-// Accepts pasted text: one student per line, "ID" or "ID, Name" (comma, tab, or semicolon).
-// Pasting a column (or two columns) straight from a spreadsheet works.
+// Accepts pasted text: one student per line, "ID" or "ID, Name" (comma, tab, or semicolon),
+// and adds them to one of your sections. Pasting columns straight from a spreadsheet works.
 app.post('/api/roster', requireInstructor, async (req, res) => {
+  const sectionId = parseInt(req.body && req.body.sectionId, 10);
   const text = String((req.body && req.body.text) || '');
   const entries = new Map();
   const invalid = [];
@@ -613,17 +963,18 @@ app.post('/api/roster', requireInstructor, async (req, res) => {
     entries.set(id, name);
   }
   try {
-    let added = 0, updated = 0;
-    for (const [id, name] of entries) {
-      const r = await pool.query(
-        `INSERT INTO roster (student_id, name) VALUES ($1, $2)
-         ON CONFLICT (student_id) DO UPDATE SET name = COALESCE(EXCLUDED.name, roster.name)
-         RETURNING (xmax = 0) AS inserted`,
-        [id, name]
-      );
-      if (r.rows[0].inserted) added += 1; else updated += 1;
+    if (!Number.isInteger(sectionId) || !(await teaches(req.instructor.id, sectionId))) {
+      return res.status(400).json({ error: 'Choose one of your sections to add these students to.' });
     }
-    res.json({ added, updated, invalid });
+    let added = 0, already = 0;
+    for (const [id, name] of entries) {
+      await pool.query(
+        `INSERT INTO roster (student_id, name) VALUES ($1, $2)
+         ON CONFLICT (student_id) DO UPDATE SET name = COALESCE(EXCLUDED.name, roster.name)`, [id, name]);
+      const m = await pool.query(`INSERT INTO section_students (section_id, student_id) VALUES ($1, $2) ON CONFLICT DO NOTHING RETURNING student_id`, [sectionId, id]);
+      if (m.rows[0]) added += 1; else already += 1;
+    }
+    res.json({ added, updated: already, invalid });
   } catch (e) {
     console.error('Ceteris: roster import failed —', e.message);
     res.status(500).json({ error: 'Could not save the roster.' });
@@ -635,8 +986,8 @@ app.post('/api/roster', requireInstructor, async (req, res) => {
 app.post('/api/roster/:studentId/reset-password', requireInstructor, async (req, res) => {
   const id = normalizeId(req.params.studentId);
   try {
-    const r = await pool.query('UPDATE roster SET password_hash=NULL, password_set_at=NULL WHERE student_id=$1', [id]);
-    if (!r.rowCount) return res.status(404).json({ error: 'That student is not on the roster.' });
+    if (!(await canSeeStudent(req.instructor.id, id))) return res.status(404).json({ error: 'That student is not in your sections.' });
+    await pool.query('UPDATE roster SET password_hash=NULL, password_set_at=NULL WHERE student_id=$1', [id]);
     await pool.query(`DELETE FROM auth_sessions WHERE role='student' AND student_id=$1`, [id]);
     failedById.delete(id);
     res.json({ ok: true });
@@ -646,26 +997,33 @@ app.post('/api/roster/:studentId/reset-password', requireInstructor, async (req,
   }
 });
 
-// Removing a student revokes their access immediately; their past sessions stay in the database.
-app.delete('/api/roster/:studentId', requireInstructor, async (req, res) => {
+// Taking a student out of a section. A student in no section can no longer log in;
+// their past work stays in the database.
+app.delete('/api/sections/:id/students/:studentId', requireInstructor, async (req, res) => {
+  const sectionId = parseInt(req.params.id, 10);
   const id = normalizeId(req.params.studentId);
   try {
-    await pool.query('DELETE FROM roster WHERE student_id=$1', [id]);
-    await pool.query(`DELETE FROM auth_sessions WHERE role='student' AND student_id=$1`, [id]);
-    res.json({ ok: true });
+    if (!(await teaches(req.instructor.id, sectionId))) return res.status(404).json({ error: 'Section not found.' });
+    await pool.query('DELETE FROM section_students WHERE section_id=$1 AND student_id=$2', [sectionId, id]);
+    const left = await pool.query('SELECT 1 FROM section_students WHERE student_id=$1 LIMIT 1', [id]);
+    if (!left.rows[0]) await pool.query(`DELETE FROM auth_sessions WHERE role='student' AND student_id=$1`, [id]);
+    res.json({ ok: true, stillEnrolled: !!left.rows[0] });
   } catch (e) {
-    console.error('Ceteris: roster delete failed —', e.message);
+    console.error('Ceteris: remove from section failed —', e.message);
     res.status(500).json({ error: 'Could not remove that student.' });
   }
 });
 
-// Every roster student, including those who have never used the tool.
+// Every student in your sections (or one section), including those who have never used the tool.
 app.get('/api/usage', requireInstructor, async (req, res) => {
+  const f = await sectionFilter(req, res);
+  if (!f) return;
   try {
     const result = await pool.query(`
       SELECT r.student_id, r.name, r.share_transcripts, u.message_count, u.days_active, u.first_seen, u.last_seen
       FROM roster r LEFT JOIN usage_stats u ON r.student_id = u.student_id
-    `);
+      WHERE ${visibleTo('r.student_id', '$1', '$2')}
+    `, [req.instructor.id, f.id]);
     const rows = result.rows.map(r => ({
       studentId: r.student_id,
       name: r.name,
@@ -695,6 +1053,8 @@ app.get('/api/threads', requireInstructor, async (req, res) => {
   const range = String(req.query.range || '7');
   const cutoff = range === 'all' ? null : daysBefore(todayKey(), Math.max(0, (parseInt(range, 10) || 7) - 1));
   const student = req.query.student ? normalizeId(req.query.student) : null;
+  const f = await sectionFilter(req, res);
+  if (!f) return;
   try {
     const result = await pool.query(`
       SELECT t.student_id, r.name, COALESCE(r.share_transcripts, false) AS shared, t.day, t.updated_at, t.transcript, s.summary
@@ -705,9 +1065,10 @@ app.get('/api/threads', requireInstructor, async (req, res) => {
         AND jsonb_array_length(t.transcript) > 0
         AND ($1::text IS NULL OR t.day >= $1)
         AND ($2::text IS NULL OR t.student_id = $2)
+        AND ${visibleTo('t.student_id', '$3', '$4')}
       ORDER BY COALESCE(t.updated_at, t.day::date::timestamptz) DESC
       LIMIT 300
-    `, [cutoff, student]);
+    `, [cutoff, student, req.instructor.id, f.id]);
     const threads = result.rows.map(r => {
       const t = r.transcript;
       const notes = t.filter(m => m.role === 'instructor');
@@ -754,18 +1115,23 @@ async function loadThread(studentId, day) {
   };
 }
 
-function threadParams(req, res) {
+// Also checks that the student is in one of the instructor's sections.
+async function threadParams(req, res) {
   const studentId = normalizeId(req.params.studentId);
   const day = String(req.params.day || '');
   if (!STUDENT_ID_PATTERN.test(studentId) || !DAY_PATTERN.test(day)) {
     res.status(400).json({ error: 'Invalid conversation reference.' });
     return null;
   }
+  if (!(await canSeeStudent(req.instructor.id, studentId))) {
+    res.status(404).json({ error: 'Conversation not found.' });
+    return null;
+  }
   return { studentId, day };
 }
 
 app.get('/api/threads/:studentId/:day', requireInstructor, async (req, res) => {
-  const p = threadParams(req, res);
+  const p = await threadParams(req, res);
   if (!p) return;
   try {
     const thread = await loadThread(p.studentId, p.day);
@@ -780,12 +1146,12 @@ app.get('/api/threads/:studentId/:day', requireInstructor, async (req, res) => {
 // The instructor chimes in. The note is appended to the conversation; the student sees it
 // next time they open Ceteris, and Ceteris reads it as course guidance.
 app.post('/api/threads/:studentId/:day/notes', requireInstructor, async (req, res) => {
-  const p = threadParams(req, res);
+  const p = await threadParams(req, res);
   if (!p) return;
   const text = String((req.body && req.body.text) || '').trim();
   if (!text) return res.status(400).json({ error: 'Write a note first.' });
   if (text.length > 4000) return res.status(400).json({ error: 'That note is too long (4,000 characters max).' });
-  const note = { id: newId(), role: 'instructor', content: text, at: new Date().toISOString(), seen: false, author: INSTRUCTOR_NAME };
+  const note = { id: newId(), role: 'instructor', content: text, at: new Date().toISOString(), seen: false, author: req.instructor.name, authorId: req.instructor.id };
   try {
     const r = await pool.query(
       `UPDATE transcripts SET transcript = transcript || $3::jsonb, updated_at = now()
@@ -801,15 +1167,15 @@ app.post('/api/threads/:studentId/:day/notes', requireInstructor, async (req, re
 });
 
 app.delete('/api/threads/:studentId/:day/notes/:noteId', requireInstructor, async (req, res) => {
-  const p = threadParams(req, res);
+  const p = await threadParams(req, res);
   if (!p) return;
   try {
     await pool.query(
       `UPDATE transcripts SET transcript = COALESCE((
          SELECT jsonb_agg(m ORDER BY ord) FROM jsonb_array_elements(transcripts.transcript) WITH ORDINALITY AS t(m, ord)
-         WHERE NOT (m->>'role' = 'instructor' AND m->>'id' = $3)), '[]'::jsonb)
+         WHERE NOT (m->>'role' = 'instructor' AND m->>'id' = $3 AND (m->>'authorId' IS NULL OR m->>'authorId' = $4))), '[]'::jsonb)
        WHERE student_id = $1 AND day = $2`,
-      [p.studentId, p.day, String(req.params.noteId)]
+      [p.studentId, p.day, String(req.params.noteId), String(req.instructor.id)]
     );
     const thread = await loadThread(p.studentId, p.day);
     if (!thread) return res.status(404).json({ error: 'Conversation not found.' });
@@ -823,7 +1189,7 @@ app.delete('/api/threads/:studentId/:day/notes/:noteId', requireInstructor, asyn
 // --- In-class mini-essays (see essays.js) -----------------------------------------
 const essays = require('./essays')(app, {
   pool, requireStudent, requireInstructor, callAnthropic, normalizeId, STUDENT_ID_PATTERN,
-  instructorName: INSTRUCTOR_NAME
+  instructorName: INSTRUCTOR_NAME, teaches, canSeeStudent, visibleTo, sectionFilter, instructorNamesFor
 });
 
 const PORT = process.env.PORT || 3000;

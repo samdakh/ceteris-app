@@ -8,6 +8,7 @@ Runs as a small Node.js server so students only need the link — no Claude acco
 - `public/index.html` — the frontend (student chat + instructor dashboard), served as static files.
 - `essays.js` — the in-class mini-essay writing coach (server side: tables, routes, the coach).
 - `public/essays-ui.js` and `public/essays.css` — the essay screens for students and the instructor's Essays tab.
+- `public/admin-ui.js` and `public/admin.css` — instructor accounts, sections and their students.
 - Data (student roster, logins, transcripts, daily summaries, usage stats) lives in a **Postgres database**, not a local file — this is what makes reports permanent across server restarts.
 
 ## 1. Get an API key
@@ -60,17 +61,29 @@ Instead of storing a long-lived `ANTHROPIC_API_KEY` on Render, the server can au
 
 Local testing still uses an API key in `.env` (federation only works on Render, where the identity token exists). Once federation is confirmed working on Render, delete the old API key in the Console.
 
-## Adding your students
-Students log in with their 6-character student ID (letters and/or digits, not case-sensitive) and a password. Only IDs on your roster can log in.
+## Instructors and sections
+**Instructor accounts.** Each instructor has their own username and password.
+- The first account is the **admin**: username `admin` (or `INSTRUCTOR_USERNAME` if you set it), password `INSTRUCTOR_PASSWORD`. The first time you log in, Ceteris opens **Account** and asks you to choose your own password; after that, `INSTRUCTOR_PASSWORD` no longer works for your account. On **Account** you can also change your username and the name students see on your notes.
+- **Adding instructors** (admin → **Instructors** tab): enter a username (an email address works) and the name students see. Send them the link and their username; they create their password at first login. You can make someone an admin, reset their password (they create a new one at next login), or remove the account (their sections and students stay).
+- **Locked out of the admin account?** On Render, add `RESET_ADMIN_PASSWORD=true`, redeploy, log in with `INSTRUCTOR_PASSWORD`, choose a new password, then delete `RESET_ADMIN_PASSWORD`.
 
-1. Open the app, click **I'm the instructor**, and log in. The first time, with an empty roster, the dashboard opens on the **Roster** tab.
+**Sections** (tab **Sections & students**). Each instructor creates their own sections and adds students to them.
+- A student can be in several sections (micro and macro, say), and a section can have several instructors. Any instructor of a section can add a co-instructor to it; the admin can assign anyone to any section from the **Instructors** tab.
+- **Instructors see only their own sections' students**: conversations, notes, usage, essays and papers. Conversations and Usage have a section filter when you teach more than one.
+- Students can log in only while they're in at least one section.
+- Students who were already on the roster before this update were placed in a section called **My class**, taught by the admin. Rename it, or create new sections and move students.
+
+## Adding your students
+Students log in with their 6-character student ID (letters and/or digits, not case-sensitive) and a password.
+
+1. In **Sections & students**, pick a section (or create one).
 2. Paste one student per line: the ID, optionally followed by a comma and the name (`A1B2C3, Jordan Lee`). Two columns copied straight from a spreadsheet also work. Lines without a valid ID (like a header row) are skipped and listed so you can check them.
-3. Click **Add to roster**. Pasting an ID that's already there only updates the name, so you can re-paste the full list anytime.
-4. **Remove** ends a student's access immediately; their past sessions stay in your reports.
+3. Click **Add to [section]**. Pasting an ID that's already there only updates the name, so you can re-paste the full list anytime. A student already in another section is added to this one too.
+4. **Remove** takes a student out of that section; a student left in no section can't log in. Their past sessions stay in your reports.
 
 **Passwords**: the first time a student logs in, Ceteris asks them to create a password (at least 8 characters, not their student ID). After that they log in with their ID and password. Only a salted hash of the password is stored, so nobody, including you, can read it.
-- **Forgotten password**: on the **Roster** tab, click **Reset password** next to the student (then confirm). It logs them out everywhere, and the next time they log in they create a new password. Until they do, anyone who knows their ID could set it, so reset only when they ask and tell them to log in right away.
-- The Roster tab shows whether each student has set a password yet. If a student finds their ID already has a password they never set, reset it.
+- **Forgotten password**: in **Sections & students**, click **Reset password** next to the student (then confirm). It logs them out everywhere, and the next time they log in they create a new password. Until they do, anyone who knows their ID could set it, so reset only when they ask and tell them to log in right away.
+- The section's student list shows whether each student has set a password yet. If a student finds their ID already has a password they never set, reset it.
 - Eight wrong passwords for one ID pause logins for that ID for 15 minutes (a reset clears the pause).
 - When you first deploy this version, students who were already logged in are asked to log in again and create a password.
 
@@ -79,12 +92,13 @@ Students stay logged in on their device until they click **Log out**, so remind 
 ## Features
 - **Student chat**: Socratic tutoring tuned for principles-level micro/macro. Replies render as formatted text (bold, lists, small tables), and starter questions help first-time students begin.
 - **Student side panel**: topics explored, what the student worked through today, and two suggested next questions they can click. It never shows mastery labels or flagged mistakes; those appear only on your dashboard.
-- **Instructor password gate**: a single shared password (`INSTRUCTOR_PASSWORD`). Logins now survive server restarts and last 14 days.
+- **Instructor accounts**: one per instructor, with an admin who manages them (see above). Logins survive server restarts and last 14 days.
 - **Conversations tab**: a discussion-board list of every conversation (one per student per day), newest activity first. Filter by period (today, 7 days, 30 days, all) or by student name/ID. Each row shows the student's opening question, how many questions they asked, Ceteris's read (mastery and flags), and whether you've replied. A "watch areas" chart above the list shows the most common misconceptions in the conversations listed.
 - **Reading a conversation**: click a row to see the full exchange between the student and Ceteris, with Ceteris's read in the sidebar and a link to all of that student's conversations. This only works for students who have chosen to share (see below).
 - **Chiming in**: at the bottom of any conversation, write a note (Markdown works; Cmd/Ctrl + Enter posts it). The student sees it in their chat, or, for an earlier day's conversation, in a "From your instructor" box with a banner the next time they open Ceteris. Ceteris also reads your note and treats it as course guidance, so it can build on it if the student follows up. Each note shows whether the student has seen it, and you can delete a note.
-- **Usage & engagement tab**: messages, days active, and first/last use for everyone on the roster, including students who haven't tried it yet.
-- **Roster tab**: add and remove student IDs.
+- **Usage & engagement tab**: messages, days active, and first/last use for every student in your sections, including those who haven't tried it yet.
+- **Sections & students tab**: your sections, their students and co-instructors.
+- **Instructors tab** (admins): instructor accounts and who teaches which section.
 - **Essays tab**: in-class mini-essays with a writing coach (see below).
 - **Dark mode**: a moon/sun switch in every header. It starts out matching the device's own light/dark setting and remembers each person's choice on that device. The dark theme uses the official blue as its main surface with gold accents; its darker blues are shades of the official blue (mixed with black).
 
@@ -92,8 +106,11 @@ Students stay logged in on their device until they click **Log out**, so remind 
 Students write a short essay inside Ceteris during class, guided through planning stages by a writing coach that asks questions but never writes for them. Whatever they've written is submitted automatically at the end time.
 
 **Setting one up** (instructor dashboard → **Essays**):
-1. The first essay, "Airbnb taxes and housing," is already loaded with its stages, rubric, bonus and private brief. It stays hidden from students until you give it a time.
-2. Click **Edit** (or **New essay**) and set the date, start and end time. Your computer's time zone is used. Check the planning stages (title, minutes, task, guiding question), drafting and checking minutes, and target length.
+1. The first essay, "Airbnb taxes and housing," is already loaded with its stages, rubric, bonus and private brief. It stays hidden from students until you assign it to a section and give it a time. Each instructor sees the essays they created or that are assigned to their sections; times and submissions are per section, and you see only your own sections'.
+2. Click **Edit** (or **New essay**). Under **Sections and session times**, tick each of your sections that gets the essay and choose its format (your computer's time zone is used):
+   - **In class**: a date with start and end times. Students in that section can open it only then, and whatever they've written is submitted automatically at the end.
+   - **Take-home (timed)**: an "available from" time (blank means now), a due time, and a time limit (20 minutes by default). Each student gets **one attempt**: their clock starts when they click Start, can't be paused or restarted, and their work is submitted automatically when the time limit runs out (or at the due time, if that comes first). Moving the due time earlier also cuts any attempt in progress.
+   Each section has its own time, so one essay (one rubric, one submissions page) serves sections that meet at different times. Then check the planning stages (title, minutes, task, guiding question), drafting and checking minutes, and target length.
 3. **Rubric**: students see only the criterion names and weights (so the descriptions can't give the answer away); the coach sees everything. The **bonus** is never shown to students, and the coach never prompts for it.
 4. **Private brief**: notes only the coach reads (the logic you expect, what sets the size of the effect, weak spots to probe).
 5. **Writing coach** on/off: with it off, students plan, draft and check on their own.
@@ -107,7 +124,7 @@ Students write a short essay inside Ceteris during class, guided through plannin
 - The coach panel beside the essay (a Write | Coach switch on tablets). One example phrasing per paper, only for a sentence that stays unintelligible after the coach asks what the student meant; it can't be selected or copied. If the API is busy, the server retries and the student just sees "thinking…" a little longer.
 - After submitting (or at the end time), a read-only copy of their plan and essay, also listed later under "Your in-class essays" in the chat's side panel.
 
-While an essay is open and a student hasn't submitted, the regular tutoring chat is paused for that student, so it can't be used to write the essay.
+While an in-class essay is open and a student hasn't submitted, the regular tutoring chat is paused for that student, so it can't be used to write the essay. For a take-home, the tutor is paused only during the student's own timed attempt.
 
 **Reading submissions**: **Submissions** shows every student on the roster (not started, writing, submitted, submitted automatically) with plan progress, word count and how many questions they asked the coach. It refreshes every 20 seconds while the essay is open. The Words column notes how many words came from the plan. Click a name to read the paper: the essay (with how many of its words were pasted from the plan, and each paste listed), the plan, the full coach conversation (with stage and time), and the rubric with its strong/weak descriptions alongside for grading. **Previous/Next student** steps through papers, and **Print** prints a clean copy (in light colors even in dark mode).
 
@@ -123,7 +140,9 @@ The switch controls what the app shows you. Full conversations are still stored 
 
 ## Settings
 - `CLASS_TIMEZONE` (optional, default `America/New_York`): decides when "today" starts and ends, which is when a student's conversation rolls over to a new one. Any IANA zone name works, e.g. `America/Chicago`.
-- `INSTRUCTOR_NAME` (optional, default "Your instructor"): how your notes are signed for students, e.g. `Prof. Dakhlia`.
+- `INSTRUCTOR_NAME` (optional): the admin account's display name the first time Ceteris starts, e.g. `Prof. Dakhlia`. After that, each instructor sets their own name under **Account**.
+- `INSTRUCTOR_USERNAME` (optional, default `admin`): the admin account's username the first time Ceteris starts.
+- `RESET_ADMIN_PASSWORD` (only when locked out): see Instructors and sections.
 
 ## Before rolling out to a full class
 - **Tell students about the sharing switch.** It's off by default and explained in the chat's side panel, but a word in class or on the syllabus helps students make an informed choice, especially if you'd like them to opt in.
