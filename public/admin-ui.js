@@ -178,9 +178,9 @@ window.CeterisAdmin = function (C) {
           return `<tr>
           <td class="mono">${escapeHtml(r.studentId)}</td>
           <td><span class="${r.name ? '' : 'muted'}">${escapeHtml(r.name || 'no name')}</span>${others.length ? `<div class="sub-id">also in ${others.map(s => escapeHtml(s.name)).join(', ')}</div>` : ''}</td>
-          <td class="${r.passwordSetAt ? '' : 'muted'}">${r.passwordSetAt ? 'Set ' + escapeHtml(shortDate(r.passwordSetAt)) : 'Not yet'}</td>
+          <td class="${r.passwordSetAt ? '' : 'muted'}">${r.isDemo ? 'Demo (fixed)' : r.passwordSetAt ? 'Set ' + escapeHtml(shortDate(r.passwordSetAt)) : 'Not yet'}</td>
           <td class="${r.lastSeen ? '' : 'muted'}">${escapeHtml(r.lastSeen || 'never')}</td>
-          <td class="roster-btns">${r.passwordSetAt ? `<button class="remove-btn" data-reset="${escapeHtml(r.studentId)}">Reset password</button>` : ''}<button class="remove-btn" data-remove="${escapeHtml(r.studentId)}">Remove</button></td></tr>`;
+          <td class="roster-btns">${r.passwordSetAt && !r.isDemo ? `<button class="remove-btn" data-reset="${escapeHtml(r.studentId)}">Reset password</button>` : ''}<button class="remove-btn" data-remove="${escapeHtml(r.studentId)}">Remove</button></td></tr>`;
         }).join('')}
         </tbody></table></div>
       <p class="dash-note" style="margin-top:10px;">Students create a password the first time they log in. <strong>Reset password</strong> logs the student out everywhere; they create a new password the next time they log in, so reset only when they ask, and tell them to log in soon. <strong>Remove</strong> takes the student out of this section only; a student in no section can’t log in. Their past work stays in your reports.</p>`;
@@ -231,6 +231,12 @@ window.CeterisAdmin = function (C) {
               <td class="roster-btns">${i.id !== me.id ? `${i.passwordSet ? `<button class="remove-btn" data-ireset="${i.id}">Reset password</button>` : ''}<button class="remove-btn" data-iremove="${i.id}">Remove</button>` : ''}</td>
             </tr>`).join('')}</tbody></table></div>
         </div>
+      </div>
+      <div class="box demo-box">
+        <h2>Demo student</h2>
+        ${me.demoStudent
+          ? `<p class="help" style="margin:0"><strong>On:</strong> ${escapeHtml(me.demoStudent)} is the shared test student. Instructors add it to their own sections; its password is fixed, and it can start an essay over as often as it likes while the essay is open.</p>`
+          : `<p class="ef-warn" style="margin:0"><strong>Off.</strong> To turn it on, add <code>DEMO_STUDENT_ID</code> (e.g. ABC123) and <code>DEMO_STUDENT_PASSWORD</code> (e.g. utctrial) under Environment on Render, then redeploy. Until then, ABC123 is an ordinary student with one attempt per essay.</p>`}
       </div>
       <div class="box">
         <h2>All sections</h2>

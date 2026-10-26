@@ -83,8 +83,15 @@ window.CeterisEssays = function (C) {
     try { data = await api('/api/essays/student', { token: store.get(STUDENT_KEY) }); }
     catch (e) { if (e.status === 401) C.logoutStudent(); return; }
     if (!bannerEl || !bannerEl.isConnected) return;
-    const open = data.open.filter(e => e.workStatus !== 'submitted');
-    bannerEl.innerHTML = open.map(e => `
+    // The demo student keeps seeing a submitted essay while it's open, with a Start over button.
+    const open = data.open.filter(e => e.workStatus !== 'submitted' || data.isDemo);
+    bannerEl.innerHTML = open.map(e => e.workStatus === 'submitted' ? `
+      <div class="essay-banner">
+        <span class="eb-icon">${PEN}</span>
+        <span class="eb-text"><strong>Submitted:</strong> ${escapeHtml(e.title)} · demo account, so you can try it again</span>
+        <button class="link-btn eb-view" data-essay="${e.id}">View</button>
+        <button class="eb-btn" data-restart="${e.id}">Start over</button>
+      </div>` : `
       <div class="essay-banner">
         <span class="eb-icon">${PEN}</span>
         <span class="eb-text">${e.mode === 'takehome'
@@ -108,6 +115,14 @@ window.CeterisEssays = function (C) {
         </div>
       </div>` : '';
     [bannerEl, cardEl].forEach(el => el.querySelectorAll('[data-essay]').forEach(b => { b.onclick = () => openEssay(+b.dataset.essay); }));
+    bannerEl.querySelectorAll('[data-restart]').forEach(b => {
+      b.onclick = async () => {
+        if (!b.classList.contains('confirm')) { b.classList.add('confirm'); b.textContent = 'Delete this attempt?'; return; }
+        b.disabled = true;
+        try { await api(`/api/essays/${b.dataset.restart}/restart`, { method: 'POST', token: store.get(STUDENT_KEY) }); openEssay(+b.dataset.restart); }
+        catch (err) { b.disabled = false; b.textContent = 'Start over'; b.classList.remove('confirm'); toast(err.message); }
+      };
+    });
     if (open.length) startCountdowns(data.serverTime);
   }
 
@@ -181,6 +196,7 @@ window.CeterisEssays = function (C) {
                 ? `<li><strong>One attempt, ${limit} minutes.</strong> Once you click Start, the clock runs even if you close the page; you can’t pause or start over. Make sure you have ${limit} quiet minutes first.</li>
                    <li>Your work saves as you type. Whatever you’ve written is submitted automatically when your time is up${short ? '' : ' (or at the due time, if that comes first)'}.</li>`
                 : `<li>Your work saves as you type. Whatever you’ve written is submitted automatically at ${escapeHtml(fmtClock(e.closesAt))}.</li>`}
+              ${data.isDemo ? '<li><strong>Demo account:</strong> after you submit, you can start over as many times as you like.</li>' : ''}
               <li>${takehome ? 'If something goes wrong (your device dies or the connection drops), tell your instructor right away.' : 'If your device dies, finish on paper and hand it in.'}</li>
             </ul>
             <div class="ei-actions"><button class="role-btn primary" id="ei-start">${takehome ? `Start my ${short ? minsToDue : limit}-minute essay` : 'Start the essay'}</button></div>
@@ -223,11 +239,20 @@ window.CeterisEssays = function (C) {
             ${planList(e.stages, w.plan)}
             <h3>Your essay<span class="wc-tag">${words} word${words === 1 ? '' : 's'}</span></h3>
             <div class="essay-text">${html}</div>
-            <div class="ei-actions" style="margin-top:22px"><button class="role-btn primary" id="er-home">Back to Ceteris</button></div>
+            <div class="ei-actions" style="margin-top:22px"><button class="role-btn primary" id="er-home">Back to Ceteris</button>
+              ${data.canRestart && !pending ? '<button class="role-btn" id="er-restart">Start over (demo account)</button>' : ''}</div>
+            <div class="ew-error" id="er-err" hidden></div>
           </div>
         </div>
       </div>`;
     document.getElementById('er-home').onclick = () => C.go('student-chat');
+    const again = document.getElementById('er-restart');
+    if (again) again.onclick = async () => {
+      if (!again.classList.contains('confirm')) { again.classList.add('confirm'); again.textContent = 'This deletes this attempt. Start over?'; return; }
+      again.disabled = true;
+      try { await api(`/api/essays/${e.id}/restart`, { method: 'POST', token: store.get(STUDENT_KEY) }); C.go('student-essay'); }
+      catch (err) { const box = document.getElementById('er-err'); box.textContent = err.message; box.hidden = false; again.disabled = false; }
+    };
   }
 
   function renderWriting(main, data, offset) {

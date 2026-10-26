@@ -127,6 +127,12 @@ async function initDB() {
       await pool.query(`INSERT INTO section_students (section_id, student_id) SELECT $1, student_id FROM roster`, [sec.rows[0].id]);
     }
   }
+  // The shared demo student (after the move above, so it never lands in "My class").
+  if (DEMO_STUDENT_ID && DEMO_STUDENT_PASSWORD && /^[A-Z0-9]{6}$/.test(DEMO_STUDENT_ID)) {
+    await pool.query(`INSERT INTO roster (student_id, name, password_hash, password_set_at) VALUES ($1, 'Demo Student', $2, now())
+                      ON CONFLICT (student_id) DO UPDATE SET password_hash = EXCLUDED.password_hash, password_set_at = COALESCE(roster.password_set_at, now())`,
+      [DEMO_STUDENT_ID, await hashPassword(DEMO_STUDENT_PASSWORD)]);
+  }
 }
 
 // Name shown to students on notes the instructor posts, e.g. "Prof. Dakhlia".
@@ -168,6 +174,14 @@ const USERNAME_PATTERN = /^[a-z0-9][a-z0-9._@-]{1,59}$/;
 function normalizeUsername(raw) {
   return String(raw || '').trim().toLowerCase();
 }
+
+// --- Demo student (optional) ---------------------------------------------------------
+// DEMO_STUDENT_ID + DEMO_STUDENT_PASSWORD create a shared test student (e.g. ABC123) that
+// instructors can add to their sections to see the student side. Its password is fixed,
+// it can redo an essay as often as it likes, and the tutor isn't paused for it during essays.
+const DEMO_STUDENT_ID = (process.env.DEMO_STUDENT_ID || '').trim().toUpperCase();
+const DEMO_STUDENT_PASSWORD = process.env.DEMO_STUDENT_PASSWORD || '';
+const isDemo = id => !!DEMO_STUDENT_ID && !!DEMO_STUDENT_PASSWORD && id === DEMO_STUDENT_ID;
 
 // --- Passwords (scrypt, salted; only the hash is stored) ---------------------------
 const MIN_PASSWORD = 8;
@@ -226,7 +240,7 @@ async function requireStudent(req, res, next) {
       [hashToken(token)]
     );
     if (!result.rows[0]) return res.status(401).json({ error: 'Your session has ended. Please log in again.' });
-    req.student = { id: result.rows[0].student_id, name: result.rows[0].name, shareTranscripts: result.rows[0].share_transcripts };
+    req.student = { id: result.rows[0].student_id, name: result.rows[0].name, shareTranscripts: result.rows[0].share_transcripts, isDemo: isDemo(result.rows[0].student_id) };
     next();
   } catch (e) {
     console.error('Ceteris: student auth failed —', e.message);
@@ -538,7 +552,7 @@ app.post('/api/student-login', async (req, res) => {
 });
 
 app.get('/api/me', requireStudent, (req, res) => {
-  res.json({ studentId: req.student.id, name: req.student.name, shareTranscripts: req.student.shareTranscripts });
+  res.json({ studentId: req.student.id, name: req.student.name, shareTranscripts: req.student.shareTranscripts, isDemo: req.student.isDemo });
 });
 
 // The student's choice: share full conversations with the instructor, or only summaries.
@@ -595,7 +609,8 @@ app.post('/api/tutor', requireStudent, async (req, res) => {
 
   try {
     // During an in-class essay the tutor steps aside, so it can't write the essay for anyone.
-    const essayTitle = await essays.essayInProgress(studentId);
+    // (Not for the shared demo student: one colleague's essay shouldn't block another's tutor test.)
+    const essayTitle = req.student.isDemo ? null : await essays.essayInProgress(studentId);
     if (essayTitle) return res.status(423).json({ error: `The tutor is paused while your in-class essay ("${essayTitle}") is open. The essay's coach can help in the meantime, and the tutor is back as soon as you submit.`, essayOpen: true });
 
     const { day, transcript } = await loadToday(studentId);
@@ -729,7 +744,8 @@ async function mySections(instructorId) {
 app.get('/api/instructor/me', requireInstructor, async (req, res) => {
   try {
     const r = await pool.query('SELECT use_env_password FROM instructors WHERE id=$1', [req.instructor.id]);
-    res.json({ ...req.instructor, usesSetupPassword: r.rows[0].use_env_password, sections: await mySections(req.instructor.id) });
+    res.json({ ...req.instructor, usesSetupPassword: r.rows[0].use_env_password, sections: await mySections(req.instructor.id),
+      demoStudent: DEMO_STUDENT_ID && DEMO_STUDENT_PASSWORD && /^[A-Z0-9]{6}$/.test(DEMO_STUDENT_ID) ? DEMO_STUDENT_ID : null });
   } catch (e) { console.error('Ceteris: me failed —', e.message); res.status(500).json({ error: 'Could not load your account.' }); }
 });
 
@@ -799,6 +815,7 @@ app.post('/api/instructors', requireInstructor, requireAdmin, async (req, res) =
     const r = await pool.query(`INSERT INTO instructors (username, name, is_admin) VALUES ($1, $2, $3) ON CONFLICT (username) DO NOTHING RETURNING id`,
       [username, name, !!b.isAdmin]);
     if (!r.rows[0]) return res.status(409).json({ error: 'That username is taken.' });
+    await essays.seedAirbnbFor(r.rows[0].id); // every instructor starts with their own copy of the example essay
     res.json({ id: r.rows[0].id });
   } catch (e) { console.error('Ceteris: add instructor failed —', e.message); res.status(500).json({ error: 'Could not add the instructor.' }); }
 });
@@ -939,7 +956,7 @@ app.get('/api/roster', requireInstructor, async (req, res) => {
       WHERE ${visibleTo('r.student_id', '$1', '$2')}
       ORDER BY r.name NULLS LAST, r.student_id
     `, [req.instructor.id, f.id]);
-    res.json({ rows: result.rows.map(r => ({ studentId: r.student_id, name: r.name, lastSeen: r.last_seen, passwordSetAt: r.password_set_at, sections: r.sections || [] })) });
+    res.json({ rows: result.rows.map(r => ({ studentId: r.student_id, name: r.name, lastSeen: r.last_seen, passwordSetAt: r.password_set_at, sections: r.sections || [], isDemo: isDemo(r.student_id) })) });
   } catch (e) {
     console.error('Ceteris: roster fetch failed —', e.message);
     res.status(500).json({ error: 'Could not load the roster.' });
@@ -987,6 +1004,7 @@ app.post('/api/roster/:studentId/reset-password', requireInstructor, async (req,
   const id = normalizeId(req.params.studentId);
   try {
     if (!(await canSeeStudent(req.instructor.id, id))) return res.status(404).json({ error: 'That student is not in your sections.' });
+    if (isDemo(id)) return res.status(400).json({ error: 'This is the shared demo student; its password is fixed.' });
     await pool.query('UPDATE roster SET password_hash=NULL, password_set_at=NULL WHERE student_id=$1', [id]);
     await pool.query(`DELETE FROM auth_sessions WHERE role='student' AND student_id=$1`, [id]);
     failedById.delete(id);
@@ -1189,7 +1207,7 @@ app.delete('/api/threads/:studentId/:day/notes/:noteId', requireInstructor, asyn
 // --- In-class mini-essays (see essays.js) -----------------------------------------
 const essays = require('./essays')(app, {
   pool, requireStudent, requireInstructor, callAnthropic, normalizeId, STUDENT_ID_PATTERN,
-  instructorName: INSTRUCTOR_NAME, teaches, canSeeStudent, visibleTo, sectionFilter, instructorNamesFor
+  instructorName: INSTRUCTOR_NAME, teaches, canSeeStudent, visibleTo, sectionFilter, instructorNamesFor, isDemo
 });
 
 const PORT = process.env.PORT || 3000;

@@ -296,7 +296,7 @@ function applyWordingRuleInner(reply, m, alreadyUsed) {
 
 module.exports = function registerEssays(app, deps) {
   const { pool, requireStudent, requireInstructor, callAnthropic, normalizeId, STUDENT_ID_PATTERN,
-          teaches, canSeeStudent, visibleTo, sectionFilter, instructorNamesFor } = deps;
+          teaches, canSeeStudent, visibleTo, sectionFilter, instructorNamesFor, isDemo } = deps;
   const GRACE = `($1::text || ' seconds')::interval`;
 
   async function init() {
@@ -376,8 +376,19 @@ module.exports = function registerEssays(app, deps) {
                           section_id = (SELECT ss.section_id FROM section_students ss WHERE ss.student_id = w.student_id ORDER BY ss.section_id LIMIT 1)
                         FROM essays e WHERE e.id = w.essay_id AND w.window_closes_at IS NULL`);
     }
+    for (const i of (await pool.query('SELECT id FROM instructors')).rows) await seedAirbnbFor(i.id);
     await autoSubmit();
     setInterval(() => autoSubmit().catch(e => console.error('Ceteris: auto-submit failed —', e.message)), 30000);
+  }
+
+  // Each instructor gets their own copy of the Airbnb example (once), to schedule for their sections.
+  async function seedAirbnbFor(instructorId) {
+    const f = await pool.query(`INSERT INTO app_flags (key) VALUES ($1) ON CONFLICT DO NOTHING RETURNING key`, ['essay_seed_airbnb:' + instructorId]);
+    if (!f.rows[0]) return;
+    const has = await pool.query('SELECT 1 FROM essays WHERE created_by=$1 AND title=$2', [instructorId, AIRBNB_ESSAY.title]);
+    if (has.rows[0]) return;
+    await pool.query('INSERT INTO essays (title, prompt, config, brief, created_by) VALUES ($1, $2, $3, $4, $5)',
+      [AIRBNB_ESSAY.title, AIRBNB_ESSAY.prompt, JSON.stringify(AIRBNB_ESSAY.config), AIRBNB_ESSAY.brief, instructorId]);
   }
 
   // Whatever a student has written is submitted automatically once their session ends (plus grace).
@@ -446,6 +457,7 @@ module.exports = function registerEssays(app, deps) {
         ORDER BY COALESCE(w.submitted_at, w.window_closes_at) DESC LIMIT 20`, [sid]);
       res.json({
         serverTime: now.toISOString(),
+        isDemo: isDemo(sid),
         open: open.rows.sort((a, b) => new Date(a.closes_at) - new Date(b.closes_at))
           .map(e => ({ id: e.id, title: e.title, closesAt: e.closes_at, workStatus: e.work_status || null,
                        mode: e.mode, durationMinutes: e.duration_minutes, dueAt: e.due_at })),
@@ -471,7 +483,9 @@ module.exports = function registerEssays(app, deps) {
         window = { opensAt: win.opens_at, closesAt: win.closes_at, sectionId: win.section_id, mode: win.mode, durationMinutes: win.duration_minutes, dueAt: win.closes_at };
       }
       const names = await sectionInstructorNames(window.sectionId, req.student.id);
-      res.json({ serverTime: new Date().toISOString(), instructorName: names, essay: essayForStudent(e, window), work: workForStudent(w) });
+      // The demo student can start over, as long as the essay is open for them right now.
+      const canRestart = !!(w && isDemo(req.student.id) && await openWindow(e.id, req.student.id));
+      res.json({ serverTime: new Date().toISOString(), instructorName: names, essay: essayForStudent(e, window), work: workForStudent(w), isDemo: isDemo(req.student.id), canRestart });
     } catch (err) { fail(res, 'essay fetch')(err); }
   });
 
@@ -503,6 +517,19 @@ module.exports = function registerEssays(app, deps) {
                         ON CONFLICT DO NOTHING`, [e.id, req.student.id, win.section_id, win.opens_at, win.closes_at, takehome, win.duration_minutes || 20]);
       res.json({ work: workForStudent(await loadWork(e.id, req.student.id)) });
     } catch (err) { fail(res, 'essay start')(err); }
+  });
+
+  // Demo student only: throw away this attempt so the essay can be tried again.
+  app.post('/api/essays/:id/restart', requireStudent, async (req, res) => {
+    try {
+      if (!isDemo(req.student.id)) return res.status(403).json({ error: 'Each essay can be done only once.' });
+      const e = await loadEssay(req.params.id);
+      if (!e) return res.status(404).json({ error: 'Essay not found.' });
+      if (!(await openWindow(e.id, req.student.id))) return res.status(409).json({ error: 'This essay isn’t open right now, so you couldn’t start it again.' });
+      await pool.query('DELETE FROM essay_work WHERE essay_id=$1 AND student_id=$2', [e.id, req.student.id]);
+      await pool.query('DELETE FROM essay_snapshots WHERE essay_id=$1 AND student_id=$2', [e.id, req.student.id]);
+      res.json({ ok: true });
+    } catch (err) { fail(res, 'essay restart')(err); }
   });
 
   // Autosave of the plan and draft.
@@ -829,5 +856,5 @@ module.exports = function registerEssays(app, deps) {
     return r.rows[0] ? r.rows[0].title : null;
   }
 
-  return { init, essayInProgress, _test: { htmlToText, wordCount, applyWordingRule, cleanEssay, coachSystemPrompt } };
+  return { init, essayInProgress, seedAirbnbFor, _test: { htmlToText, wordCount, applyWordingRule, cleanEssay, coachSystemPrompt } };
 };

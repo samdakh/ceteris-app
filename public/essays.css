@@ -377,3 +377,5 @@ html[data-theme="dark"] .sched-check input { accent-color: var(--gold); }
 .es-sched { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; font-size: 12.5px; }
 .es-sec { font-weight: 600; }
 .sub-scheds { margin: 0 0 14px; }
+.essay-banner .eb-view { color: var(--gold); text-decoration-color: var(--gold); margin-left: auto; font-size: 13px; }
+.essay-banner .eb-view + .eb-btn { margin-left: 6px; }

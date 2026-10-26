@@ -64,7 +64,7 @@ Local testing still uses an API key in `.env` (federation only works on Render, 
 ## Instructors and sections
 **Instructor accounts.** Each instructor has their own username and password.
 - The first account is the **admin**: username `admin` (or `INSTRUCTOR_USERNAME` if you set it), password `INSTRUCTOR_PASSWORD`. The first time you log in, Ceteris opens **Account** and asks you to choose your own password; after that, `INSTRUCTOR_PASSWORD` no longer works for your account. On **Account** you can also change your username and the name students see on your notes.
-- **Adding instructors** (admin → **Instructors** tab): enter a username (an email address works) and the name students see. Send them the link and their username; they create their password at first login. You can make someone an admin, reset their password (they create a new one at next login), or remove the account (their sections and students stay).
+- **Adding instructors** (admin → **Instructors** tab): enter a username (an email address works) and the name students see. Each new instructor starts with their own copy of the Airbnb example essay. Send them the link and their username; they create their password at first login. You can make someone an admin, reset their password (they create a new one at next login), or remove the account (their sections and students stay).
 - **Locked out of the admin account?** On Render, add `RESET_ADMIN_PASSWORD=true`, redeploy, log in with `INSTRUCTOR_PASSWORD`, choose a new password, then delete `RESET_ADMIN_PASSWORD`.
 
 **Sections** (tab **Sections & students**). Each instructor creates their own sections and adds students to them.
@@ -143,6 +143,7 @@ The switch controls what the app shows you. Full conversations are still stored 
 - `INSTRUCTOR_NAME` (optional): the admin account's display name the first time Ceteris starts, e.g. `Prof. Dakhlia`. After that, each instructor sets their own name under **Account**.
 - `INSTRUCTOR_USERNAME` (optional, default `admin`): the admin account's username the first time Ceteris starts.
 - `RESET_ADMIN_PASSWORD` (only when locked out): see Instructors and sections.
+- `DEMO_STUDENT_ID` and `DEMO_STUDENT_PASSWORD` (optional, e.g. `ABC123` and `utctrial`): a shared test student that instructors can add to their own sections to see the student side. Its password is fixed (it can't be reset), it can start an essay over as many times as it likes once it has submitted, and the tutor isn't paused for it during essays. Because it's shared, every instructor who adds it sees its conversations and essays. Remove both settings to turn it off.
 
 ## Before rolling out to a full class
 - **Tell students about the sharing switch.** It's off by default and explained in the chat's side panel, but a word in class or on the syllabus helps students make an informed choice, especially if you'd like them to opt in.

@@ -866,7 +866,7 @@
       <main class="gate">
         <form class="gate-card" id="login-form" novalidate>
           <h1>${step === 'create' ? 'Create your password' : 'Instructor access'}</h1>
-          <p>${step === 'create' ? 'First time here (or your password was reset). Choose a password for your account.' : 'Log in with your instructor username and password.'}</p>
+          <p>${step === 'create' ? 'First time here (or your password was reset). Choose a password for your account.' : 'Log in with your instructor username and password. First time? Enter your username and leave the password empty.'}</p>
           <div class="pw-field">
             <label for="iuser" class="pw-label">Username</label>
             <input id="iuser" class="pw-input" autocomplete="username" autocapitalize="none" spellcheck="false" maxlength="60" ${step === 'create' ? 'readonly' : ''} />
@@ -899,10 +899,9 @@
         if (pw.value.length < 10) return showErr('Choose a password of at least 10 characters.');
         if (pw.value !== pw2.value) return showErr('The two passwords don’t match. Type them again.');
         body.newPassword = pw.value;
-      } else {
-        if (!pw.value) return showErr('Enter your password.');
+      } else if (pw.value) {
         body.password = pw.value;
-      }
+      } // no password: a first login, or Ceteris will ask for it
       btn.disabled = true;
       try {
         const data = await api('/api/instructor-login', { method: 'POST', body });
