@@ -62,6 +62,61 @@ const AIRBNB_ESSAY = {
   ].join('\n\n')
 };
 
+// The second essay: a revenue-neutral Pigovian tax (fee and dividend). Seeded once into
+// the admin's essays, unscheduled.
+const GAS_DIVIDEND_ESSAY = {
+  title: 'Gas tax with a dividend',
+  prompt: 'Suppose the government taxes gasoline at $1 per gallon because burning it harms people who aren\'t party to the purchase. Every dollar collected is returned as an equal check to every resident, so the government keeps nothing. A critic objects: "If everyone gets their money back, nobody will drive any less." Is the critic right? Explain, and say who comes out ahead and who doesn\'t.',
+  config: {
+    stages: [
+      { key: 'claim', title: 'Claim', minutes: 2,
+        task: 'Is the critic right? Answer in one sentence.',
+        question: 'Can a tax change behavior even when everyone gets the money back?' },
+      { key: 'cost', title: 'The cost', minutes: 3,
+        task: 'Name the harm from driving that drivers don\'t pay for, and who bears it.',
+        question: 'When you fill up, who pays for the damage your driving does?' },
+      { key: 'check', title: 'The check', minutes: 4,
+        task: 'Explain whether the tax changes what a driver decides, given the check they\'ll receive.',
+        question: 'Does the size of your check depend on how much you drive? What does one more gallon cost you?' },
+      { key: 'winners', title: 'Winners and limits', minutes: 2,
+        task: 'Say who comes out ahead and who doesn\'t, and name one limit.',
+        question: 'Who uses more gas than average, who uses less, and what if drivers can\'t easily cut back?' }
+    ],
+    draftMinutes: 7,
+    checkMinutes: 2,
+    targetWords: { min: 250, max: 400 },
+    rubric: [
+      { criterion: 'Direct answer', weight: 1,
+        high: 'A clear position on the critic\'s claim, stated early, that the rest of the essay supports.',
+        low: 'No position, or one the essay later contradicts.' },
+      { criterion: 'The external cost', weight: 1,
+        high: 'Names a specific harm from burning gasoline (pollution, climate damage, congestion) and who bears it, and why drivers ignore it.',
+        low: '"Gas is bad," with no harm or bearer named.' },
+      { criterion: 'Why the check doesn\'t undo the incentive', weight: 2,
+        high: 'Explains that the check doesn\'t depend on the driver\'s own gallons, so each gallon still costs $1 more and drivers cut back where a gallon isn\'t worth that much to them; ideally with a worked example.',
+        low: 'Agrees with the critic, or asserts that the tax works without explaining why the check doesn\'t cancel it.' },
+      { criterion: 'Winners, losers and limits', weight: 1,
+        high: 'Says that below-average users come out ahead and above-average users lose, and names at least one limit (short-run inelastic demand, few alternatives, setting the tax at the right level) with a reason.',
+        low: 'Assumes everyone breaks even, or names no limit.' },
+      { criterion: 'Clarity', weight: 1,
+        high: 'Concise and logically ordered, with economic terms used correctly.',
+        low: 'Hard to follow, or terms misused.' }
+    ],
+    bonus: {
+      points: 6,
+      description: 'Separates the two effects: the tax raises the price of each gallon (substitution effect, which cuts driving), while the check makes people a bit richer (income effect, which raises driving slightly). The first dominates because the check isn\'t tied to gallons. Not expected, and never prompted.'
+    }
+  },
+  brief: [
+    'Core logic: the $1 tax raises the marginal cost of each gallon. The check is lump-sum (it doesn\'t depend on the driver\'s own gallons), so it doesn\'t offset that marginal cost. Drivers cut back where a gallon is worth less to them than its price plus $1.',
+    'Worked example: driver A uses 1,000 gallons a year and driver B uses 200; the average is 600, so each gets a $600 check. A pays $1,000 and gets $600 back (net -$400); B pays $200 and gets $600 back (net +$400). Both still save $1 for every gallon they cut. On average households break even; below-average users gain and above-average users lose. Because lower-income households typically buy less gas, the policy tends to be progressive on net, though rural and long-commute households can lose even at low incomes.',
+    'Limits: demand is inelastic in the short run (few alternatives), so the effect on driving may be small at first and larger over time; the tax should match the harm per gallon; political durability; if the check were tied to gas use, it would undo the incentive.',
+    'Bonus, not expected: substitution versus income effect (see the bonus). Never mention it or prompt for it.',
+    'Weak spots to probe: "everyone gets the money back, so nothing changes" (the critic\'s error); "people will spend the check on gas" (only the small income effect); confusing the tax with a ban or a quota; naming the harm without saying who bears it; assuming everyone breaks even.',
+    'Never name the substitution or income effect before the student does.'
+  ].join('\n\n')
+};
+
 // ---------------------------------------------------------------------------------
 // Helpers
 
@@ -377,6 +432,13 @@ module.exports = function registerEssays(app, deps) {
                         FROM essays e WHERE e.id = w.essay_id AND w.window_closes_at IS NULL`);
     }
     for (const i of (await pool.query('SELECT id FROM instructors')).rows) await seedAirbnbFor(i.id);
+    // The gas-tax essay: once, into the first admin's essays.
+    const gasFlag = await pool.query(`INSERT INTO app_flags (key) VALUES ('essay_seed_gas_dividend') ON CONFLICT DO NOTHING RETURNING key`);
+    const firstAdmin = (await pool.query('SELECT id FROM instructors WHERE is_admin ORDER BY id LIMIT 1')).rows[0];
+    if (gasFlag.rows[0] && firstAdmin) {
+      await pool.query('INSERT INTO essays (title, prompt, config, brief, created_by) VALUES ($1, $2, $3, $4, $5)',
+        [GAS_DIVIDEND_ESSAY.title, GAS_DIVIDEND_ESSAY.prompt, JSON.stringify(GAS_DIVIDEND_ESSAY.config), GAS_DIVIDEND_ESSAY.brief, firstAdmin.id]);
+    }
     await autoSubmit();
     setInterval(() => autoSubmit().catch(e => console.error('Ceteris: auto-submit failed —', e.message)), 30000);
   }
