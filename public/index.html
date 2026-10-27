@@ -831,7 +831,11 @@
     loadEssays();
     try {
       const data = await api('/api/session', { token });
-      messages = data.transcript || [];
+      // Keep anything the student sent while this was loading, unless the loaded history already has it.
+      const loaded = data.transcript || [];
+      const tail = loaded.slice(-messages.length);
+      const already = messages.length > 0 && tail.length === messages.length && tail.every((m, i) => m.role === messages[i].role && m.content === messages[i].content);
+      messages = already || !messages.length ? loaded : loaded.concat(messages);
       panel = data.panel;
       stats = data.stats || stats;
       instructorName = data.instructorName || instructorName;
