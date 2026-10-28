@@ -1210,9 +1210,28 @@ const essays = require('./essays')(app, {
   instructorName: INSTRUCTOR_NAME, teaches, canSeeStudent, visibleTo, sectionFilter, instructorNamesFor, isDemo
 });
 
+// Supabase also serves every table in the "public" schema through its web API (PostgREST),
+// which Ceteris never uses. Row-Level Security with no policies shuts that door completely.
+// Ceteris itself connects as the tables' owner, which RLS doesn't restrict, so it keeps working.
+async function lockDownTables() {
+  try {
+    const r = await pool.query(`
+      SELECT c.relname FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
+      WHERE n.nspname = 'public' AND c.relkind = 'r' AND NOT c.relrowsecurity
+        AND pg_get_userbyid(c.relowner) = current_user`);
+    for (const { relname } of r.rows) {
+      await pool.query(`ALTER TABLE public."${relname.replace(/"/g, '""')}" ENABLE ROW LEVEL SECURITY`);
+    }
+    if (r.rows.length) console.log(`Ceteris: row-level security turned on for ${r.rows.length} table(s).`);
+  } catch (e) {
+    console.error('Ceteris: could not turn on row-level security —', e.message);
+  }
+}
+
 const PORT = process.env.PORT || 3000;
 initDB()
   .then(() => essays.init())
+  .then(() => lockDownTables())
   .then(() => {
     app.listen(PORT, () => console.log(`Ceteris server listening on port ${PORT}`));
   })
