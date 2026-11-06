@@ -437,12 +437,26 @@
       <text x="100" y="52" font-family="IBM Plex Mono" font-size="10" fill="#FFFFFF">E</text>
     </svg>`;
 
+  // If the server starts reporting a different build, this tab is running an old version of the page.
+  let pageBuild = null;
+  function noticeBuild(b) {
+    if (!b) return;
+    if (!pageBuild) { pageBuild = b; return; }
+    if (b === pageBuild || document.getElementById('update-bar')) return;
+    const bar = document.createElement('div');
+    bar.id = 'update-bar'; bar.className = 'update-bar'; bar.setAttribute('role', 'status');
+    bar.innerHTML = '<span>Ceteris has been updated.</span><button type="button" class="update-reload">Reload</button>';
+    bar.querySelector('button').onclick = () => location.reload();
+    document.body.appendChild(bar);
+  }
+
   async function api(path, opts) {
     const { method = 'GET', body, token } = opts || {};
     const headers = {};
     if (body !== undefined) headers['Content-Type'] = 'application/json';
     if (token) headers['Authorization'] = 'Bearer ' + token;
     const res = await fetch(path, { method, headers, body: body !== undefined ? JSON.stringify(body) : undefined });
+    noticeBuild(res.headers.get('X-Ceteris-Build'));
     let data = {};
     try { data = await res.json(); } catch (e) {}
     if (!res.ok) {
@@ -454,6 +468,7 @@
   }
 
   let poller = null; // student view's periodic check for new instructor notes
+  fetch(location.pathname, { method: 'HEAD', cache: 'no-store' }).then(r => noticeBuild(r.headers.get('X-Ceteris-Build'))).catch(() => {});
   const SUN = '<svg class="ts-sun" width="13" height="13" viewBox="0 0 14 14" fill="none" aria-hidden="true"><circle cx="7" cy="7" r="2.6" fill="currentColor"/><path d="M7 .9v1.6M7 11.5v1.6M.9 7h1.6M11.5 7h1.6M2.7 2.7l1.1 1.1M10.2 10.2l1.1 1.1M2.7 11.3l1.1-1.1M10.2 3.8l1.1-1.1" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>';
   const MOON = '<svg class="ts-moon" width="12" height="12" viewBox="0 0 14 14" fill="none" aria-hidden="true"><path d="M11.8 9.2A5.3 5.3 0 0 1 4.8 2.2a5.3 5.3 0 1 0 7 7Z" fill="currentColor"/></svg>';
   const isDark = () => document.documentElement.getAttribute('data-theme') === 'dark';
@@ -640,6 +655,7 @@
       <main class="student-main">
         <section class="chat-panel" aria-label="Conversation">
           <div id="essay-banner" hidden></div>
+          <div id="practice-banner" hidden></div>
           <div class="note-banner" id="note-banner" hidden></div>
           <div class="chat-scroll" id="chat-scroll" role="log" aria-live="polite"></div>
           <form class="composer" id="composer">
@@ -806,7 +822,7 @@
     // Check every 45 seconds for notes the instructor posts while the student is here.
     const loadEssays = () => {
       Essays.loadStudentHome(document.getElementById('essay-banner'), document.getElementById('essay-card'));
-      Practice.loadStudentHome(document.getElementById('practice-card'));
+      Practice.loadStudentHome(document.getElementById('practice-card'), document.getElementById('practice-banner'));
     };
     async function poll() {
       if (document.visibilityState !== 'visible') return;

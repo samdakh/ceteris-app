@@ -36,7 +36,7 @@ window.CeterisPractice = function (C) {
   // ===================================================================================
   // Student: card on the tutoring screen
 
-  async function loadStudentHome(cardEl) {
+  async function loadStudentHome(cardEl, bannerEl) {
     let d;
     try { d = await api('/api/practice/student', { token: token() }); }
     catch (e) { if (e.status === 401) C.logoutStudent(); return; }
@@ -58,6 +58,18 @@ window.CeterisPractice = function (C) {
         }).join('')}</div>
       </div>` : '';
     cardEl.querySelectorAll('[data-set]').forEach(b => { b.onclick = () => openSet(b.dataset.set); });
+    // On narrow screens the side panel sits below the chat, so unfinished sets also get a banner above it.
+    if (bannerEl && bannerEl.isConnected) {
+      const open = d.sets.filter(s => s.solved + s.shown < s.total);
+      bannerEl.innerHTML = open.map(s => `
+        <div class="essay-banner pc-banner">
+          <span class="eb-icon">${ICON_BOOK}</span>
+          <span class="eb-text"><strong>Problem set:</strong> ${escapeHtml(s.title)}${s.solved + s.shown ? ` · ${s.solved + s.shown} of ${s.total} steps` : ''}</span>
+          <button class="eb-btn" data-set="${escapeHtml(s.id)}">${s.solved + s.shown ? 'Continue' : 'Start'}</button>
+        </div>`).join('');
+      bannerEl.hidden = !open.length;
+      bannerEl.querySelectorAll('[data-set]').forEach(b => { b.onclick = () => openSet(b.dataset.set); });
+    }
   }
 
   function openSet(id) { state.practiceId = id; C.go('student-practice'); }

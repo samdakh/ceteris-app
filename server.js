@@ -10,7 +10,18 @@ const app = express();
 app.set('trust proxy', 1); // Render sits behind a proxy; needed so req.ip is the student's real IP
 app.use(cors());
 app.use(express.json({ limit: '200kb' }));
-app.use(express.static(path.join(__dirname, 'public')));
+// A fingerprint of the student/instructor pages. Every response carries it, so a tab left open
+// from before an update can tell that it's out of date and offer to reload.
+const BUILD = (() => {
+  const h = require('crypto').createHash('sha256');
+  const dir = path.join(__dirname, 'public');
+  for (const f of require('fs').readdirSync(dir).filter(f => /\.(html|js|css)$/.test(f)).sort()) h.update(f).update(require('fs').readFileSync(path.join(dir, f)));
+  return h.digest('hex').slice(0, 12);
+})();
+app.use((req, res, next) => { res.set('X-Ceteris-Build', BUILD); next(); });
+app.use(express.static(path.join(__dirname, 'public'), {
+  setHeaders: (res, file) => { if (/\.(html|js|css)$/.test(file)) res.set('Cache-Control', 'no-cache'); }
+}));
 
 // Markdown renderer + sanitizer for the browser, served from our own node_modules
 // so the app doesn't depend on an outside CDN being up.
