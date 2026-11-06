@@ -1210,6 +1210,12 @@ const essays = require('./essays')(app, {
   instructorName: INSTRUCTOR_NAME, teaches, canSeeStudent, visibleTo, sectionFilter, instructorNamesFor, isDemo
 });
 
+// --- Problem-set coach (see practice.js) ------------------------------------------
+const practice = require('./practice')(app, {
+  pool, requireStudent, requireInstructor, callAnthropic, canSeeStudent, sectionFilter, instructorNamesFor, isDemo,
+  instructorName: INSTRUCTOR_NAME, essayInProgress: id => essays.essayInProgress(id)
+});
+
 // Supabase also serves every table in the "public" schema through its web API (PostgREST),
 // which Ceteris never uses. Row-Level Security with no policies shuts that door completely.
 // Ceteris itself connects as the tables' owner, which RLS doesn't restrict, so it keeps working.
@@ -1231,6 +1237,7 @@ async function lockDownTables() {
 const PORT = process.env.PORT || 3000;
 initDB()
   .then(() => essays.init())
+  .then(() => practice.init())
   .then(() => lockDownTables())
   .then(() => {
     app.listen(PORT, () => console.log(`Ceteris server listening on port ${PORT}`));

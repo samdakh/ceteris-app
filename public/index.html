@@ -23,6 +23,7 @@
 <script src="/vendor/purify.js"></script>
 <script src="/essays-ui.js"></script>
 <script src="/admin-ui.js"></script>
+<script src="/practice-ui.js"></script>
 <style>
   :root {
     /* Official university colors, exact values */
@@ -389,6 +390,7 @@
 </style>
 <link rel="stylesheet" href="/essays.css">
 <link rel="stylesheet" href="/admin.css">
+<link rel="stylesheet" href="/practice.css">
 </head>
 <body>
 <div id="app"></div>
@@ -486,7 +488,7 @@
   function render() {
     ({ 'landing': renderLanding, 'student-login': renderStudentLogin, 'student-chat': renderStudentChat,
        'instructor-login': renderInstructorLogin, 'instructor': renderInstructor,
-       'student-essay': () => Essays.renderStudentEssay() })[state.view]();
+       'student-essay': () => Essays.renderStudentEssay(), 'student-practice': () => Practice.renderStudentPractice() })[state.view]();
     bindThemeSwitches();
   }
 
@@ -647,7 +649,7 @@
           </form>
           <div class="composer-hint">Enter to send · Shift + Enter for a new line</div>
         </section>
-        <aside class="side-panel" aria-label="Today's session"><div id="essay-card"></div><div id="side-panel"></div></aside>
+        <aside class="side-panel" aria-label="Today's session"><div id="practice-card"></div><div id="essay-card"></div><div id="side-panel"></div></aside>
       </main>`;
 
     const scroll = document.getElementById('chat-scroll');
@@ -802,7 +804,10 @@
     }
 
     // Check every 45 seconds for notes the instructor posts while the student is here.
-    const loadEssays = () => Essays.loadStudentHome(document.getElementById('essay-banner'), document.getElementById('essay-card'));
+    const loadEssays = () => {
+      Essays.loadStudentHome(document.getElementById('essay-banner'), document.getElementById('essay-card'));
+      Practice.loadStudentHome(document.getElementById('practice-card'));
+    };
     async function poll() {
       if (document.visibilityState !== 'visible') return;
       loadEssays();
@@ -966,6 +971,7 @@
         <nav class="dash-tabs" role="tablist">
           <button class="dash-tab" data-tab="conversations" role="tab">Conversations</button>
           <button class="dash-tab" data-tab="essays" role="tab">Essays</button>
+          <button class="dash-tab" data-tab="practice" role="tab">Problem sets</button>
           <button class="dash-tab" data-tab="usage" role="tab">Usage &amp; engagement</button>
           <button class="dash-tab" data-tab="sections" role="tab">Sections &amp; students</button>
           <button class="dash-tab" data-tab="instructors" role="tab" hidden>Instructors</button>
@@ -1000,6 +1006,7 @@
     if (tab === 'instructors') Admin.renderInstructors();
     if (tab === 'account') Admin.renderAccount(state.me && state.me.usesSetupPassword ? 'Welcome! Please choose your own password below.' : null);
     if (tab === 'essays') Essays.renderInstructorEssays();
+    if (tab === 'practice') Practice.renderInstructorPractice();
   }
 
   // ---------- Conversations (discussion-board view) ----------
@@ -1299,6 +1306,10 @@
     icons: { ARROW, SEND, CHECK, CAP, LOCK }
   });
   const Admin = window.CeterisAdmin({ iapi, escapeHtml, state, reloadMe, refreshHeader });
+  const Practice = window.CeterisPractice({
+    api, iapi, escapeHtml, renderMarkdown, store, STUDENT_KEY, state, root, go, themeSwitch, bindThemeSwitches, logoutStudent,
+    icons: { SEND }
+  });
 
   // ---------- Start ----------
   (async function start() {
