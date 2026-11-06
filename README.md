@@ -9,9 +9,9 @@ Runs as a small Node.js server so students only need the link — no Claude acco
 - `essays.js` — the in-class mini-essay writing coach (server side: tables, routes, the coach).
 - `public/essays-ui.js` and `public/essays.css` — the essay screens for students and the instructor's Essays tab.
 - `public/admin-ui.js` and `public/admin.css` — instructor accounts, sections and their students.
-- `practice-sets.js` — the problem sets the problem-set coach walks students through (content and keys).
-- `practice.js` — the problem-set coach (server side: answer checking, hints, explanation reviews, progress).
-- `public/practice-ui.js` and `public/practice.css` — the problem-set screens for students and the instructor's Problem sets tab.
+- `practice-catalog.js` — the practice exercises, by course and chapter: each one a generator that draws fresh numbers for every attempt.
+- `practice.js` — practice on the server: attempts, scoring, answer checking, hints, explanation reviews, progress.
+- `public/practice-ui.js` and `public/practice.css` — the practice screens for students and the instructor's Practice tab.
 - Data (student roster, logins, transcripts, daily summaries, usage stats) lives in a **Postgres database**, not a local file — this is what makes reports permanent across server restarts.
 
 ## 1. Get an API key
@@ -103,7 +103,7 @@ Students stay logged in on their device until they click **Log out**, so remind 
 - **Sections & students tab**: your sections, their students and co-instructors.
 - **Instructors tab** (admins): instructor accounts and who teaches which section.
 - **Essays tab**: in-class mini-essays with a writing coach (see below).
-- **Problem sets tab**: a step-by-step coach through your problem sets (see below).
+- **Practice tab**: step-by-step exercises by course and chapter, scored, with fresh numbers on every attempt (see below).
 - **Dark mode**: a moon/sun switch in every header. It starts out matching the device's own light/dark setting and remembers each person's choice on that device. The dark theme uses the official blue as its main surface with gold accents; its darker blues are shades of the official blue (mixed with black).
 
 ## In-class mini-essays
@@ -134,22 +134,26 @@ While an in-class essay is open and a student hasn't submitted, the regular tuto
 
 **Details**: autosaves that arrive up to 90 seconds after the end time still count (for a slow connection), then everything still in progress is submitted automatically. A snapshot of the draft is kept about every 30 seconds for the draft history. Each student can ask the coach up to 60 questions per essay. An essay can be deleted only before any student has started it; **Duplicate** copies one (without its time) for another section.
 
-## Problem-set coach
-Walks a student through one of your problem sets a step at a time. The first set is Chapter 15, **Firms in competitive markets** (Bob's lawn mowing, a firm in long-run equilibrium, Ball Bearings, haircuts in Chattanooga, an industry with 100 firms): 5 problems, 40 steps.
+## Practice
+Step-by-step exercises, organized by course and chapter. The first chapter is **Principles of Microeconomics → Chapter 15, Firms in competitive markets**, five exercises built from the Chapter 15 worksheet: Bob's lawn-mowing service, a firm in long-run equilibrium, Ball Bearings, haircuts in Chattanooga, and an industry on its way to the long run.
 
-**Opening a set** (instructor dashboard → **Problem sets**): tick the sections it's open for. Students in those sections see a "Problem sets" card in their chat's side panel; untick to close it again. **Answer key** shows every step with its answer, the hints, the feedback for common mistakes and the "why it works" explanation, so you can check what the coach will say.
+**Fresh numbers on every attempt.** Each exercise is a generator: every attempt draws its own numbers (prices, costs, quantities, demand schedule), and the answers, hints, feedback and explanations are computed from them. The conclusions vary too: in some versions Bob should shut down, in others he's profitable; in some the industry sees entry rather than exit. A key shared between students doesn't help. The worksheet's own numbers are one version among many (the answer key shows them first).
 
-**What students do**: each problem shows its statement and one step at a time; the next step appears once the current one is solved. Steps are:
-- **Numbers** ("What is Bob's average variable cost?"): typed as 35, $35, -20, −$20 or (20). Checked in code, not by the AI, so the coach can't mark a wrong answer right.
-- **Choices** (shut down or keep operating; more than, less than or exactly 100; select-all-that-apply for reading the problem).
-- **Tables**: cell by cell, with wrong cells marked. A whole column that follows a known wrong formula (MC entered as AVC, ATC without fixed cost) gets a message about the formula.
-- **Explanations** ("Explain your answer in a sentence or two"): reviewed by Claude against your model answer and a short list of what an acceptable answer must contain. It accepts any wording that has the reasoning and sends back one question if something is missing.
+**Opening exercises** (instructor dashboard → **Practice**): one row per exercise, one column per section you teach. **Open all** opens a whole chapter in a section; the switches open or close single exercises as lectures progress. **Answer key** shows an exercise with the worksheet numbers, and **Show another version** draws a random one, with its answers, hints, common-mistake feedback and the explanation students see after each step.
 
-Known wrong answers get a specific message (e.g., $45 for AVC: "That's average *total* cost"). **Hint** reveals your hints one at a time; after the last one, **Show the solution** (confirmed, and counted as "shown", not "solved"). After every step the student sees **Why it works**, written from your key. A **Coach** panel beside the problem answers questions about the current step: it knows the problem, the key and what the student has tried, but won't give the answer. Up to 60 questions per student per set. During an in-class essay the coach and explanation reviews pause (checking answers and hints still work).
+**What students do**: their chat's side panel (or a banner above the chat on a phone) shows the chapters open to them; a chapter page lists the exercises with their best score. Inside an exercise, one step at a time:
+- **Numbers**: typed as 35, $35, -20, −$20 or (20). Checked in code, never by the AI.
+- **Choices**, including select-all-that-apply for reading the problem.
+- **Tables**: cell by cell ("23 of 24 cells are right already"), with a message about the formula when a whole column follows a known wrong one.
+- **Explanations**: reviewed by Claude against the model answer and a short list of what an acceptable answer must contain.
 
-**Progress**: one row per student, one cell per step: ✓ first try, ✓ with the number of wrong tries (h = used hints), S = solution shown. The footer gives the share solved on the first try, and **Where students get stuck** lists the five steps with the most wrong tries, hints and solutions shown. Click a name to see every answer they entered on each step, the coach's review of each explanation, and their questions to the coach.
+Known wrong answers get a specific message; **Hint** reveals hints one at a time, then **Show the solution**. After each step the student sees a few kind words and **Why it works**. A **Coach** panel answers questions about the current step without giving the answer. The tone throughout is warm and encouraging; the coach is told to notice what's right before it nudges.
 
-**Adding a set**: sets live in `practice-sets.js`, one object per set (the format is described at the top of the file). The demo student can **Start over** a set as often as it likes.
+**Scoring**: each attempt is scored out of 100. A step solved on the first try without hints earns full credit; each wrong try (number or choice) takes off 20%, each wrong table check or sent-back explanation 10%, each hint 10%, but a solved step never earns less than half. A shown solution earns nothing for that step. Tables count double. **New numbers** starts a fresh attempt at any time; an unfinished attempt keeps the score it had. Every attempt is kept, and a student's **best** score on an exercise (among attempts that are over) is their achievement. When an attempt ends, students see their score, how it compares with their best, and buttons to try again or move on.
+
+**Progress & scores** (per chapter): one row per student, one cell per exercise with their best score (×3 = three attempts; a dot = an attempt in progress), the average best per exercise, and **Where students get stuck**: the steps with the most wrong tries, hints and solutions shown, across all attempts. Click a name to see every attempt, with its own numbers, each step's credit, every answer entered, the coach's reviews and the student's questions.
+
+**Adding exercises**: exercises live in `practice-catalog.js`, under their course and chapter (the format is described at the top of the file). The server builds every exercise from a few hundred random seeds when it starts, so a broken generator stops it there rather than in front of a student. The demo student can **Erase my history** on any exercise.
 
 ## Student privacy: summaries by default
 Each student decides what you see, with a switch in their chat's side panel: **Share full conversations with [you]**. It is **off by default**.

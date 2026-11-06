@@ -503,7 +503,7 @@
   function render() {
     ({ 'landing': renderLanding, 'student-login': renderStudentLogin, 'student-chat': renderStudentChat,
        'instructor-login': renderInstructorLogin, 'instructor': renderInstructor,
-       'student-essay': () => Essays.renderStudentEssay(), 'student-practice': () => Practice.renderStudentPractice() })[state.view]();
+       'student-essay': () => Essays.renderStudentEssay(), 'student-practice': () => Practice.renderStudentPractice(), 'student-exercise': () => Practice.renderStudentExercise() })[state.view]();
     bindThemeSwitches();
   }
 
@@ -987,7 +987,7 @@
         <nav class="dash-tabs" role="tablist">
           <button class="dash-tab" data-tab="conversations" role="tab">Conversations</button>
           <button class="dash-tab" data-tab="essays" role="tab">Essays</button>
-          <button class="dash-tab" data-tab="practice" role="tab">Problem sets</button>
+          <button class="dash-tab" data-tab="practice" role="tab">Practice</button>
           <button class="dash-tab" data-tab="usage" role="tab">Usage &amp; engagement</button>
           <button class="dash-tab" data-tab="sections" role="tab">Sections &amp; students</button>
           <button class="dash-tab" data-tab="instructors" role="tab" hidden>Instructors</button>
