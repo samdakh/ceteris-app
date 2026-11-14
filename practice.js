@@ -301,12 +301,8 @@ function stepKeyText(s) {
   return fmtAnswer(s);
 }
 
-const COURSE_VOCAB = `Use the instructor's vocabulary and reasoning:
-- A firm in a competitive market is a price taker; P is given.
-- A profit-maximizing competitive firm produces where P = MC (with a cost schedule, the row where MC equals the price).
-- "Shut down" is a short-run decision: keep operating if P > AVC (revenue covers variable cost); fixed cost is paid either way.
-- "Exit" is a long-run decision: exit if P < ATC (revenue doesn't cover total cost), since all costs are avoidable in the long run.
-- Long-run equilibrium with free entry and exit and identical firms: P = min ATC = MC, zero profit, firms at their efficient scale (the quantity that minimizes ATC). MC crosses ATC at the minimum of ATC.`;
+// The chapter's own vocabulary and rules of thumb (set in the catalog), for the coach and the reviewer.
+const vocabFor = ex => `Use the instructor's vocabulary and reasoning:\n${EX.get(ex.id).chapter.vocab || ''}`;
 
 const TONE = `Tone: warm, encouraging and plain-spoken, like a friendly professor in office hours. Notice what the student got right before you nudge. Contractions are fine; a light touch of dry humor is fine. Never sarcastic, never condescending, and no gushing or empty praise.`;
 
@@ -322,7 +318,7 @@ ${s.model}
 An acceptable explanation must:
 ${s.mustHave.map(m => '- ' + m).join('\n')}
 
-${COURSE_VOCAB}
+${vocabFor(ex)}
 
 Be fair: any wording that clearly expresses each point counts. Exact numbers are not required if the comparison is stated correctly (e.g., "the price is above average variable cost"). Wrong economics (e.g., comparing with the wrong cost, or a wrong conclusion) is not acceptable.
 
@@ -361,7 +357,7 @@ How to coach:
 
 ${TONE} If the student sounds discouraged, reassure them briefly: mistakes on the way are how this gets learned, and every retake comes with fresh numbers.
 
-${COURSE_VOCAB}
+${vocabFor(ex)}
 
 Exercise: ${ex.title}
 ${bodyText(inst)}
@@ -369,6 +365,31 @@ ${bodyText(inst)}
 Steps:
 ${lines.join('\n')}`;
 }
+
+// How much of a student's explanation is lifted from text already on their screen: the
+// statement, hints they've seen, and the explanations shown after finished steps. Share of the
+// student's words covered by 5-word runs that also appear there.
+function visibleText(inst, steps) {
+  const parts = [bodyText(inst)];
+  for (const s of inst.steps) {
+    const st = steps[s.key];
+    if (!st) continue;
+    parts.push(...(s.hints || []).slice(0, st.hints || 0));
+    if (st.status === 'solved' || st.status === 'shown') parts.push(s.kind === 'explain' ? s.model : s.worked || '');
+  }
+  return parts;
+}
+function copiedShare(text, sources) {
+  const words = t => String(t).toLowerCase().replace(/[*_“”"’‘']/g, '').replace(/[^a-z0-9$.%−-]+/g, ' ').split(' ').filter(Boolean);
+  const w = words(text), n = 5;
+  if (w.length < n + 3) return 0;
+  const grams = new Set();
+  for (const src of sources) { const ws = words(src); for (let i = 0; i + n <= ws.length; i++) grams.add(ws.slice(i, i + n).join(' ')); }
+  const covered = new Array(w.length).fill(false);
+  for (let i = 0; i + n <= w.length; i++) if (grams.has(w.slice(i, i + n).join(' '))) for (let k = i; k < i + n; k++) covered[k] = true;
+  return covered.filter(Boolean).length / w.length;
+}
+const COPY_LIMIT = 0.6;
 
 function parseVerdict(text) {
   const m = String(text || '').replace(/```json|```/g, '').match(/\{[\s\S]*\}/);
@@ -607,6 +628,14 @@ module.exports = function registerPractice(app, deps) {
         if (essay) return res.status(423).json({ error: `Explanations can’t be reviewed while your in-class essay (“${essay}”) is open. Come back to this step after you submit.` });
       }
       if (st.attempts >= MAX_EXPLAIN_TRIES) return res.status(429).json({ error: 'That’s the limit of reviews for this step. Show the solution to compare with yours.' });
+      // Mostly pasted from what's already on the page: send it back without a review or a penalty.
+      if (copiedShare(text, visibleText(inst, c.a.steps || {})) >= COPY_LIMIT) {
+        st.answer = text;
+        st.feedback = 'That reads a lot like an explanation that’s already on this page. Try putting it in your own words: that’s how it sticks, and it’s what the reviewer is looking for. (This one doesn’t count against you.)';
+        logEntry(st, { answer: text, ok: false, copied: true });
+        const saved = await saveStep(c, st);
+        return res.json({ correct: false, copied: true, message: st.feedback, step: stepForStudent(s, st, false), ...saved });
+      }
       const prev = i > 0 && inst.steps[i - 1].kind === 'choice' ? inst.steps[i - 1] : null;
       let verdict;
       try {
@@ -844,5 +873,5 @@ module.exports = function registerPractice(app, deps) {
     } catch (e) { fail(res, 'practice student work')(e); }
   });
 
-  return { init, _test: { parseNum, checkNumber, checkChoice, checkTable, instance, scoreOf, stepCredit, explainSystem, askSystem, parseVerdict, tableKey, fmtAnswer, COURSES, EX, rng } };
+  return { init, _test: { copiedShare, visibleText, parseNum, checkNumber, checkChoice, checkTable, instance, scoreOf, stepCredit, explainSystem, askSystem, parseVerdict, tableKey, fmtAnswer, COURSES, EX, rng } };
 };

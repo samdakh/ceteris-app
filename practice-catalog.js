@@ -13,22 +13,7 @@
      explain  model (the model answer), mustHave (what an acceptable answer must contain)
    Every step: prompt, label (short name for the instructor), hints [..], worked, weight (default 1). */
 
-// ---- helpers ------------------------------------------------------------------------
-
-function num(v) {
-  const r = Math.round(v * 100) / 100;
-  return Number.isInteger(r) ? r.toLocaleString('en-US') : r.toLocaleString('en-US', { minimumFractionDigits: r * 10 % 1 === 0 ? 1 : 2, maximumFractionDigits: 2 });
-}
-const $ = v => {
-  const a = Math.round(Math.abs(v) * 100) / 100;
-  return (v < 0 ? '−$' : '$') + (Number.isInteger(a) ? a.toLocaleString('en-US') : a.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }));
-};
-const money = v => ({ value: v, unit: '$' });
-const count = (v, unit) => ({ value: v, unit });
-const ORD = ['zeroth', 'first', 'second', 'third', 'fourth', 'fifth', 'sixth', 'seventh'];
-const range = n => Array.from({ length: n }, (_, i) => i);
-const round1 = v => Math.round(v * 10) / 10;
-function check(cond, what) { if (!cond) throw new Error('generator invariant failed: ' + what); }
+const { num, $, money, count, ORD, range, round1, check } = require('./practice-helpers');
 
 // ======================================================================================
 // Chapter 15, exercise 1: Bob's lawn-mowing service
@@ -89,14 +74,12 @@ const bob = {
           worked: `AVC = ${$(AVC)} and P = ${$(P)}. P ${shut ? '<' : '>'} AVC, so, for now, Bob should **${shut ? 'shut down' : 'keep operating'}**.`
         },
         {
-          key: 'shutdown-why', kind: 'explain', label: 'Why (short run)',
-          prompt: 'Explain your answer in a sentence or two.',
-          model: shut
-            ? `Bob should shut down because P = ${$(P)} is below AVC = ${$(AVC)}: each lawn brings in less than it costs to mow (revenue ${$(Rev)}, variable cost ${$(VC)}). Mowing would add ${$(VC - Rev)} to his losses, on top of the ${$(FC)} fixed cost he owes anyway.`
-            : `Bob should keep operating because P = ${$(P)} exceeds AVC = ${$(AVC)} (revenue of ${$(Rev)} covers variable cost of ${$(VC)}). The extra ${$(Rev - VC)} goes toward the ${$(FC)} fixed cost, which he would owe even if he shut down.`,
-          mustHave: [`compares the price (${$(P)}) with average variable cost (${$(AVC)}), or revenue (${$(Rev)}) with variable cost (${$(VC)})`,
-            shut ? 'concludes that because P < AVC, Bob should shut down in the short run' : 'concludes that because P > AVC, Bob should keep operating in the short run'],
-          hints: ['Name the two numbers you compared, and say which one is bigger.']
+          key: 'fixed-cost', kind: 'explain', label: 'Fixed cost and shutting down',
+          prompt: `Bob’s fixed cost is ${$(FC)} a day, yet it played no part in your shut-down answer. In a few sentences, explain why.`,
+          model: `In the short run, Bob’s fixed cost is sunk: he owes the ${$(FC)} whether he mows or not, so it can’t make one choice better than the other. What changes when he shuts down is only what he can avoid: his revenue (${$(Rev)}) and his variable cost (${$(VC)}). So the shut-down decision compares the price with AVC, not with ATC. ${shut ? 'Here each lawn brings in less than its variable cost, so mowing would only add to his losses.' : 'Here each lawn covers its variable cost, and the difference helps pay a fixed cost he’d owe anyway.'}`,
+          mustHave: ['says the fixed cost must be paid whether Bob mows or not in the short run (it is sunk or unavoidable), so it cannot affect the choice',
+            'says the shut-down decision depends only on costs he can avoid: revenue versus variable cost, or P versus AVC'],
+          hints: ['If Bob shuts down tomorrow, which of his costs go away, and which ones does he still owe?']
         },
         {
           key: 'atc', kind: 'number', label: 'ATC',
@@ -124,14 +107,19 @@ const bob = {
             : `ATC = ${$(ATC)} and P = ${$(P)}. P > ATC, so Bob makes a profit (${$(profit)} a day) and should **stay in business**.`
         },
         {
-          key: 'exit-why', kind: 'explain', label: 'Why (long run)',
-          prompt: 'Explain your answer in a sentence or two.',
-          model: exit
-            ? `P = ${$(P)} is below ATC = ${$(ATC)}, so Bob loses ${$(ATC - P)} a lawn (${$(-profit)} a day: revenue ${$(Rev)}, total cost ${$(TC)}). In the long run he can avoid all of his costs, fixed cost included, by leaving, so he should exit if the price stays at ${$(P)}.`
-            : `P = ${$(P)} is above ATC = ${$(ATC)}, so Bob makes a profit of ${$(P - ATC)} a lawn (${$(profit)} a day: revenue ${$(Rev)}, total cost ${$(TC)}). Even with every cost counted, the business pays, so he should stay.`,
-          mustHave: [`compares the price (${$(P)}) with average total cost (${$(ATC)}), or revenue (${$(Rev)}) with total cost (${$(TC)})`,
-            exit ? 'concludes that because P < ATC (a loss), Bob should exit in the long run' : 'concludes that because P > ATC (a profit), Bob should stay in business'],
-          hints: ['Which cost matters in the long run, and how does it compare with the price?']
+          key: 'big-picture', kind: 'explain', label: shut || !exit ? (exit ? 'AVC vs. ATC' : 'Will the profit last?') : 'Stay now, leave later',
+          prompt: !exit
+            ? `Bob makes a profit at ${$(P)} a lawn. In a market with free entry, would you expect that profit to last? In a few sentences, explain what happens over time.`
+            : shut
+              ? 'Your two answers compared the price with different costs: AVC for shutting down, ATC for exiting. In a few sentences, explain why the short-run and long-run decisions use different costs.'
+              : 'Bob should keep mowing for now, yet leave the business in the long run. In a few sentences, explain how both answers can be right.',
+          model: !exit
+            ? `Probably not. Profits attract new lawn-mowing services. As they enter, market supply increases and the price falls, until profit is driven to zero (P = min ATC). Bob’s ${$(profit)} a day is a sign that this market isn’t in its long-run equilibrium yet.`
+            : `In the short run, the ${$(FC)} fixed cost is sunk: Bob pays it whether he mows or not, so only his variable cost matters and he compares the price with AVC. In the long run nothing is fixed: when his leases and equipment come up for renewal, he can avoid every cost, so the price has to cover average total cost. ${shut ? 'At ' + $(P) + ', it covers neither.' : 'At ' + $(P) + ', it covers AVC (' + $(AVC) + ') but not ATC (' + $(ATC) + '): worth mowing for now, not worth staying in for good.'}`,
+          mustHave: !exit
+            ? ['says profits attract new firms (entry)', 'says entry increases supply and pushes the price down until profit is zero (P = min ATC)']
+            : ['says that in the short run the fixed cost is paid either way (sunk), so only variable costs matter: P versus AVC', 'says that in the long run every cost, fixed cost included, can be avoided, so the price must cover ATC'],
+          hints: [!exit ? 'What do would-be lawn-mowing services do when they see Bob making money?' : 'Which of Bob’s costs can he avoid tomorrow, and which only when his commitments run out?']
         }
       ]
     };
@@ -318,13 +306,6 @@ const bearings = {
           worked: `In the short run (which is what “shut down” refers to), the firm should **keep operating**. This is because its revenue (${$(Rev)}) exceeds its variable cost (VC = ${$(VC[qs])}).`
         },
         {
-          key: 'shutdown-why', kind: 'explain', label: 'Why (short run)',
-          prompt: 'Explain your answer in a sentence or two.',
-          model: `Revenue of ${$(Rev)} exceeds variable cost of ${$(VC[qs])} (P = ${$(P)} > AVC = ${$(at.AVC)}), so operating covers variable cost and ${profit < 0 ? `pays ${$(Rev - VC[qs])} toward the ${$(FC)} fixed cost. Shutting down would mean losing the whole ${$(FC)} instead of ${$(-profit)}.` : `covers the ${$(FC)} fixed cost as well, leaving a profit.`}`,
-          mustHave: [`compares revenue (${$(Rev)}) with variable cost (${$(VC[qs])}), or the price (${$(P)}) with AVC (${$(at.AVC)})`, 'concludes that the firm should keep operating in the short run'],
-          hints: ['What would the firm lose if it shut down? What does it lose (or gain) by operating?']
-        },
-        {
           key: 'exit', kind: 'choice', label: 'Exit?',
           prompt: 'Should the firm exit (close permanently)?',
           options: [
@@ -338,14 +319,12 @@ const bearings = {
             : `The firm should **stay**: its revenue (${$(Rev)}) covers its total cost (TC = ${$(TC)}), so it earns a profit of ${$(profit)} even in the long run, when every cost counts.`
         },
         {
-          key: 'exit-why', kind: 'explain', label: 'Why (long run)',
-          prompt: 'Explain your answer in a sentence or two.',
-          model: exit
-            ? `Revenue (${$(Rev)}) does not cover total cost (${$(TC)}): P = ${$(P)} < ATC = ${$(at.ATC)}. In the long run the firm can avoid all its costs (for instance by not renewing leases or replacing worn-out machines), so it should exit if the price is expected to stay this low.`
-            : `Revenue (${$(Rev)}) covers total cost (${$(TC)}): P = ${$(P)} > ATC = ${$(at.ATC)}. Even when every cost is avoidable, staying pays, so the firm should stay.`,
-          mustHave: [`compares revenue (${$(Rev)}) with total cost (${$(TC)}), or the price (${$(P)}) with ATC (${$(at.ATC)})`,
-            exit ? 'concludes that the firm should exit in the long run if the price stays low' : 'concludes that the firm should stay, because it makes a profit'],
-          hints: ['In the long run, which costs count? Do they get covered?']
+          key: 'sr-lr', kind: 'explain', label: 'Short run vs. long run',
+          prompt: 'In a few sentences, explain why the long-run and the short-run decisions are fundamentally different.',
+          model: `In the short run some costs are fixed: the firm owes its ${$(FC)} fixed cost whether it produces or not, so that cost is sunk and plays no part in the decision to shut down. The firm keeps operating as long as revenue covers variable cost (P ≥ AVC). In the long run nothing is fixed: leases expire and machines wear out, so every cost, the fixed cost included, can be avoided by leaving. The exit decision therefore compares revenue with total cost (P versus ATC).`,
+          mustHave: ['says that in the short run fixed costs must be paid whether the firm produces or not (they are sunk), so only variable costs matter: P versus AVC, or revenue versus variable cost',
+            'says that in the long run all costs are avoidable (nothing is fixed), so the firm compares P with ATC, or revenue with total cost'],
+          hints: ['Which of the firm’s costs can it escape by suspending operations next week? Which can it escape only by closing for good?']
         }
       ]
     };
@@ -454,17 +433,6 @@ const haircuts = {
             : `**No.** Each salon loses ${$(-profit0)} a day, so in the long run some salons will close. Market supply shifts left and the price rises until profit is zero.`
         },
         {
-          key: 'lr-why', kind: 'explain', label: 'Why not long run',
-          prompt: 'Explain your answer in a sentence or two.',
-          model: entry
-            ? `No. At ${$(P0)} the salons make a profit (P is above ATC: ${$(profit0)} a day), so with free entry new salons open. Market supply increases and the price falls until salons just break even, at P = min ATC.`
-            : `No. At ${$(P0)} the salons lose money (P is below ATC: a ${$(-profit0)} loss a day), so with free exit some salons close. Market supply decreases and the price rises until the remaining salons break even, at P = min ATC.`,
-          mustHave: entry
-            ? ['points to the profits (positive profit, or P above ATC)', 'says that new salons will enter, so the market (price, number of salons) will change']
-            : ['points to the losses (negative profit, or P below ATC)', 'says that salons will exit, so the market (price, number of salons) will change'],
-          hints: [entry ? 'What do would-be salon owners do when existing salons make money?' : 'What do owners of money-losing salons do in the long run?']
-        },
-        {
           key: 'lr-p', kind: 'number', label: 'LR price',
           prompt: 'Suppose that in the long run there is free entry and exit. What is the market price in the long run?',
           answer: money(PL),
@@ -502,6 +470,19 @@ const haircuts = {
           mistakes: [{ value: QL / (L - 1), tol: 0.5, msg: `That assumes ${L - 1} haircuts per salon. How many does each salon do in the long run?` }],
           hints: ['Market quantity ÷ haircuts per salon.'],
           worked: `${num(QL)} ÷ ${L} = **${num(QL / L)}** salons, ${entry ? 'up' : 'down'} from ${Number.isInteger(n0) ? num(n0) : `about ${Math.round(n0)}`}.`
+        },
+        {
+          key: 'salons-why', kind: 'explain', label: entry ? 'More salons, fewer cuts each' : 'Fewer salons, more cuts each',
+          prompt: entry
+            ? 'In the long run there are more salons, yet each one does fewer haircuts than before. In a few sentences, explain how both can happen.'
+            : 'In the long run there are fewer salons, yet each one does more haircuts than before. In a few sentences, explain how both can happen.',
+          model: entry
+            ? `New salons enter while profits last, and the price falls from ${$(P0)} to ${$(PL)}. Each salon produces where P = MC, so at a lower price it moves down its MC curve, to ${L} haircuts instead of ${q0}. At the lower price, buyers want more haircuts (${num(QL)} instead of ${num(Q0)}), and more haircuts in total with fewer per salon means more salons.`
+            : `Salons close while losses last, and the price rises from ${$(P0)} to ${$(PL)}. Each remaining salon produces where P = MC, so at a higher price it moves up its MC curve, to ${L} haircuts instead of ${q0}. At the higher price, buyers want fewer haircuts (${num(QL)} instead of ${num(Q0)}), and fewer haircuts in total with more per salon means fewer salons.`,
+          mustHave: entry
+            ? ['says each salon produces where P = MC, so the lower long-run price means fewer haircuts per salon', 'says the lower price raises the quantity demanded in the market, so more salons are needed even though each does fewer']
+            : ['says each salon produces where P = MC, so the higher long-run price means more haircuts per salon', 'says the higher price lowers the quantity demanded in the market, so fewer salons are needed even though each does more'],
+          hints: ['Two things change: what each salon does at the new price, and what the whole market buys at it. Take them one at a time.']
         }
       ]
     };
@@ -586,17 +567,6 @@ const industry = {
             : `At ${$(P)}, each firm’s ATC is ${$(ATC(q0))}, so each loses ${$(-profit)}. Firms exit, market supply shifts left, and the price **rises** toward min ATC (${$(best)}).`
         },
         {
-          key: 'price-why', kind: 'explain', label: 'Why the price changes',
-          prompt: 'Explain your answer in a sentence or two.',
-          model: entry
-            ? `At ${$(P)} each firm makes a profit (ATC = ${$(ATC(q0))} at q = ${q0}, a profit of ${$(profit)}), so new firms enter. Market supply shifts right and the price falls until it reaches min ATC, ${$(best)}, where profit is zero.`
-            : `At ${$(P)} each firm loses money (ATC = ${$(ATC(q0))} at q = ${q0}, a loss of ${$(-profit)}), so firms exit. Market supply shifts left and the price rises until it reaches min ATC, ${$(best)}, where profit is zero.`,
-          mustHave: entry
-            ? [`firms make a profit at ${$(P)} (P > ATC)`, 'firms enter, so market supply increases and the price falls']
-            : [`firms lose money at ${$(P)} (P < ATC)`, 'firms exit, so market supply decreases and the price rises'],
-          hints: [`Start from each firm’s profit at ${$(P)}, then follow what firms do about it.`]
-        },
-        {
           key: 'qd', kind: 'choice', label: 'Quantity demanded',
           prompt: 'Will the quantity demanded rise or fall?',
           options: [
@@ -619,6 +589,13 @@ const industry = {
           worked: entry
             ? `**Fall**: with a lower price, each firm moves down its MC curve, from ${q0} units toward its efficient scale (${qe} units, where ATC is lowest at ${$(best)}). Market quantity still rises, because there are more firms.`
             : `**Rise**: with a higher price, each remaining firm moves up its MC curve, from ${q0} units toward its efficient scale (${qe} units, where ATC is lowest at ${$(best)}). Market quantity still falls, because there are fewer firms.`
+        },
+        {
+          key: 'zero-profit', kind: 'explain', label: 'Why zero profit',
+          prompt: 'Once this market reaches its new long-run equilibrium, how much profit will each firm make? In a few sentences, explain why it can’t be anything else, as long as firms are free to enter and exit.',
+          model: `Zero. If firms made a profit, new firms would enter, increasing market supply and pushing the price down. If they made losses, some would exit, decreasing supply and pushing the price up. The only price at which neither happens is P = min ATC (about ${$(best)}), where each firm just breaks even.`,
+          mustHave: ['says profit will be zero (P = min ATC, or P = ATC)', 'explains that any profit would attract entry and any loss would cause exit, either of which moves the price until profit is zero'],
+          hints: ['Suppose firms were still making a little profit in the “long run.” What would happen next? And with a little loss?']
         }
       ]
     };
@@ -636,10 +613,17 @@ const COURSES = [
         id: 'ch15', number: 15,
         title: 'Firms in competitive markets',
         subtitle: 'Shut down, exit, and long-run equilibrium',
+        // How the coach and the explanation reviewer should reason about this chapter.
+        vocab: `- A firm in a competitive market is a price taker; P is given.
+- A profit-maximizing competitive firm produces where P = MC (with a cost schedule, the row where MC equals the price).
+- "Shut down" is a short-run decision: keep operating if P > AVC (revenue covers variable cost); fixed cost is paid either way.
+- "Exit" is a long-run decision: exit if P < ATC (revenue doesn't cover total cost), since all costs are avoidable in the long run.
+- Long-run equilibrium with free entry and exit and identical firms: P = min ATC = MC, zero profit, firms at their efficient scale (the quantity that minimizes ATC). MC crosses ATC at the minimum of ATC.`,
         exercises: [bob, lrFirm, bearings, haircuts, industry]
-      }
+      },
+      require('./practice-ch16')
     ]
   }
 ];
 
-module.exports = { COURSES, helpers: { num, $ } };
+module.exports = { COURSES };

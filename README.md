@@ -9,7 +9,9 @@ Runs as a small Node.js server so students only need the link — no Claude acco
 - `essays.js` — the in-class mini-essay writing coach (server side: tables, routes, the coach).
 - `public/essays-ui.js` and `public/essays.css` — the essay screens for students and the instructor's Essays tab.
 - `public/admin-ui.js` and `public/admin.css` — instructor accounts, sections and their students.
-- `practice-catalog.js` — the practice exercises, by course and chapter: each one a generator that draws fresh numbers for every attempt.
+- `practice-catalog.js` — the practice catalog (courses and chapters) and the Chapter 15 exercises: each one a generator that draws fresh numbers for every attempt.
+- `practice-ch16.js` — the Chapter 16 (monopoly) exercises.
+- `practice-helpers.js` — small helpers the chapter files share.
 - `practice.js` — practice on the server: attempts, scoring, answer checking, hints, explanation reviews, progress.
 - `public/practice-ui.js` and `public/practice.css` — the practice screens for students and the instructor's Practice tab.
 - Data (student roster, logins, transcripts, daily summaries, usage stats) lives in a **Postgres database**, not a local file — this is what makes reports permanent across server restarts.
@@ -135,7 +137,11 @@ While an in-class essay is open and a student hasn't submitted, the regular tuto
 **Details**: autosaves that arrive up to 90 seconds after the end time still count (for a slow connection), then everything still in progress is submitted automatically. A snapshot of the draft is kept about every 30 seconds for the draft history. Each student can ask the coach up to 60 questions per essay. An essay can be deleted only before any student has started it; **Duplicate** copies one (without its time) for another section.
 
 ## Practice
-Step-by-step exercises, organized by course and chapter. The first chapter is **Principles of Microeconomics → Chapter 15, Firms in competitive markets**, five exercises built from the Chapter 15 worksheet: Bob's lawn-mowing service, a firm in long-run equilibrium, Ball Bearings, haircuts in Chattanooga, and an industry on its way to the long run.
+Step-by-step exercises, organized by course and chapter. **Principles of Microeconomics** has two chapters so far:
+- **Chapter 15, Firms in competitive markets** (from the Chapter 15 worksheet): Bob's lawn-mowing service, a firm in long-run equilibrium, Ball Bearings, haircuts in Chattanooga, and an industry on its way to the long run.
+- **Chapter 16, Monopoly** (from the FA25 monopoly questions): monopoly power and efficiency (multiple choice, variants drawn and options shuffled), Fly-Rite's pogo sticks (MR = MC, deadweight loss, the patent expires), Fly-Rite and free trade, Drive-By Truckers' album (MR from a schedule, the recording fee), Chattanooga FC tickets and a play in town (price discrimination, and what a ban does).
+
+Each chapter carries its own vocabulary (in its catalog entry), which the coach and the explanation reviewer use.
 
 **Fresh numbers on every attempt.** Each exercise is a generator: every attempt draws its own numbers (prices, costs, quantities, demand schedule), and the answers, hints, feedback and explanations are computed from them. The conclusions vary too: in some versions Bob should shut down, in others he's profitable; in some the industry sees entry rather than exit. A key shared between students doesn't help. The worksheet's own numbers are one version among many (the answer key shows them first).
 
@@ -153,7 +159,7 @@ Known wrong answers get a specific message; **Hint** reveals hints one at a time
 
 **Progress & scores** (per chapter): one row per student, one cell per exercise with their best score (×3 = three attempts; a dot = an attempt in progress), the average best per exercise, and **Where students get stuck**: the steps with the most wrong tries, hints and solutions shown, across all attempts. Click a name to see every attempt, with its own numbers, each step's credit, every answer entered, the coach's reviews and the student's questions.
 
-**Adding exercises**: exercises live in `practice-catalog.js`, under their course and chapter (the format is described at the top of the file). The server builds every exercise from a few hundred random seeds when it starts, so a broken generator stops it there rather than in front of a student. The demo student can **Erase my history** on any exercise.
+**Adding exercises**: a chapter is a list of exercise generators plus its vocabulary, listed in `practice-catalog.js` (the format is described at the top of that file; Chapter 16 lives in its own file, `practice-ch16.js`, which is the pattern for new chapters). The server builds every exercise from a few hundred random seeds when it starts, so a broken generator stops it there rather than in front of a student. The demo student can **Erase my history** on any exercise.
 
 ## Student privacy: summaries by default
 Each student decides what you see, with a switch in their chat's side panel: **Share full conversations with [you]**. It is **off by default**.
