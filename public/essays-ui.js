@@ -1172,7 +1172,7 @@ window.CeterisEssays = function (C) {
               <td>${has ? `<button class="link-btn plain sub-name" data-paper="${escapeHtml(r.studentId)}">${escapeHtml(r.name || r.studentId)}</button>` : `<span>${escapeHtml(r.name || r.studentId)}</span>`}<div class="mono sub-id">${escapeHtml(r.studentId)}${multi && subSection === 'all' ? ` · ${r.sections.map(x => escapeHtml(x.name)).join(', ')}` : ''}</div></td>
               <td><span class="badge ${cls}">${label}</span></td>
               <td class="num">${has ? `${r.planDone}/${r.planTotal}` : '—'}</td>
-              <td class="num">${has ? r.words : '—'}${has && r.pastedWordsKept ? `<div class="sub-id">${r.pastedWordsKept} from plan</div>` : ''}</td>
+              <td class="num">${has ? r.words : '—'}${has && r.pastedWordsKept ? `<div class="sub-id">${r.pastedWordsKept} from plan</div>` : ''}${has && r.fastJumps ? `<div class="sub-jump" title="Words added faster than typing pace: see the paper’s draft history"><span class="dh-flag" aria-hidden="true">!</span>${r.fastJumps} fast jump${r.fastJumps === 1 ? '' : 's'}</div>` : ''}</td>
               <td>${has ? `${r.coachMessages} question${r.coachMessages === 1 ? '' : 's'}${r.wordingUsed ? '<div class="sub-id">wording suggestion used</div>' : ''}` : '—'}</td>
               <td class="sub-when">${escapeHtml(when)}</td>
             </tr>`;
@@ -1242,7 +1242,8 @@ window.CeterisEssays = function (C) {
                 ${m.wording ? `<div class="pp-wording"><div class="ecw-label">Wording suggestion (the one allowed)</div><div class="ecw-orig">Student’s sentence: “${escapeHtml(m.wording.original)}”</div><div class="ecw-text">${escapeHtml(m.wording.suggestion)}</div></div>` : ''}
               </li>`).join('')}</ol>` : `<p class="dash-note">${e.coachEnabled ? 'This student didn’t use the coach.' : 'The coach was off for this essay.'}</p>`}
           </section>
-          <p class="dash-note pp-history">Draft history: ${w.snapshots} snapshot${w.snapshots === 1 ? '' : 's'} saved, about every 30 seconds while writing.</p>
+          <section class="pp-history no-print" id="dh"><h3>Draft history<span class="wc-tag">${w.snapshots} snapshot${w.snapshots === 1 ? '' : 's'}${w.fastJumps ? ` · ${w.fastJumps} fast jump${w.fastJumps === 1 ? '' : 's'}` : ''}</span></h3>
+            <div id="dh-body"><div class="dash-note">Loading the draft history…</div></div></section>
         </article>
         <aside class="paper-aside">
           <div class="box">
@@ -1262,6 +1263,152 @@ window.CeterisEssays = function (C) {
     if (prev) document.getElementById('pp-prev').onclick = () => renderPaper(id, prev, order);
     if (next) document.getElementById('pp-next').onclick = () => renderPaper(id, next, order);
     window.scrollTo(0, 0);
+    renderHistory(id, sid, c, name);
+  }
+
+  // ---- Draft history: a word-count chart over time, a replay of the snapshots with the
+  // changes highlighted, and the "fast jumps" worth a look. ----
+
+  // Draft HTML → words and paragraph breaks, for a word-level comparison between snapshots.
+  function draftTokens(html) {
+    const t = document.createElement('template');
+    t.innerHTML = cleanDraft(String(html || '').replace(/<\/(p|div|li|h\d)>|<br\s*\/?>/gi, '$&\n\n'));
+    return (t.content.textContent || '').match(/\n\n|\S+/g) || [];
+  }
+  // Longest common subsequence diff: [{t, op: 'same'|'add'|'del'}].
+  function diffTokens(a, b) {
+    const n = a.length, m = b.length;
+    if (n * m > 4e6) return b.map(t => ({ t, op: 'same' }));
+    const L = Array.from({ length: n + 1 }, () => new Uint16Array(m + 1));
+    for (let i = n - 1; i >= 0; i--) for (let j = m - 1; j >= 0; j--) L[i][j] = a[i] === b[j] ? L[i + 1][j + 1] + 1 : Math.max(L[i + 1][j], L[i][j + 1]);
+    const out = [];
+    let i = 0, j = 0;
+    while (i < n && j < m) {
+      if (a[i] === b[j]) { out.push({ t: b[j], op: 'same' }); i++; j++; }
+      else if (L[i + 1][j] >= L[i][j + 1]) out.push({ t: a[i++], op: 'del' });
+      else out.push({ t: b[j++], op: 'add' });
+    }
+    while (i < n) out.push({ t: a[i++], op: 'del' });
+    while (j < m) out.push({ t: b[j++], op: 'add' });
+    return out;
+  }
+  function diffHtml(parts, showChanges) {
+    let html = '', run = null, buf = [];
+    const flush = () => {
+      if (!buf.length) return;
+      const txt = buf.join(' ');
+      html += run === 'add' ? `<mark class="dh-add">${escapeHtml(txt)}</mark> ` : run === 'del' ? `<del class="dh-del">${escapeHtml(txt)}</del> ` : escapeHtml(txt) + ' ';
+      buf = [];
+    };
+    for (const p of parts) {
+      if (!showChanges && p.op === 'del') continue;
+      const op = showChanges ? p.op : 'same';
+      if (p.t === '\n\n') { flush(); if (p.op !== 'del' || showChanges) html += '<span class="dh-para"></span>'; run = null; continue; }
+      if (op !== run) { flush(); run = op; }
+      buf.push(p.t);
+    }
+    flush();
+    return html.trim() || '<span class="dash-note">(empty)</span>';
+  }
+  const fmtSecs = s => (s >= 90 ? `${Math.round(s / 60)} min` : `${s} s`);
+  const fmtClockS = d => new Date(d).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit', second: '2-digit' });
+
+  async function renderHistory(id, sid, c, name) {
+    const box = document.getElementById('dh-body');
+    if (!box) return;
+    let d;
+    try { d = await iapi(`/api/essays/${id}/work/${encodeURIComponent(sid)}/history`); }
+    catch (e) { box.innerHTML = `<p class="dash-note">${escapeHtml(e.message)}</p>`; return; }
+    if (!box.isConnected) return;
+    const F = d.frames;
+    if (!F.length) { box.innerHTML = '<p class="dash-note">No snapshots were saved for this paper.</p>'; return; }
+    const t0 = new Date(d.startedAt || F[0].at).getTime();
+    const mins = f => (new Date(f.at).getTime() - t0) / 60000;
+    const fast = F.map((f, i) => (f.change.fast ? i : -1)).filter(i => i >= 0);
+    const tokens = F.map(f => draftTokens(f.draftHtml));
+    let cur = F.length - 1, showChanges = true;
+
+    // Chart geometry (SVG user units; the SVG scales to the box width).
+    const W = 640, H = 170, ml = 40, mr = 12, mt = 12, mb = 26;
+    const xMax = Math.max(1, mins(F[F.length - 1]));
+    const yMax = Math.max(c.targetWords.max, ...F.map(f => f.words)) * 1.08;
+    const X = m => ml + (m / xMax) * (W - ml - mr), Y = v => mt + (1 - v / yMax) * (H - mt - mb);
+    const step = xMax <= 12 ? 2 : xMax <= 30 ? 5 : xMax <= 90 ? 15 : 30;
+    const xt = []; for (let m = 0; m <= xMax + 1e-9; m += step) xt.push(m);
+    const yStep = yMax > 600 ? 200 : yMax > 300 ? 100 : 50;
+    const yt = []; for (let v = 0; v <= yMax; v += yStep) yt.push(v);
+    const path = [[0, 0], ...F.map(f => [mins(f), f.words])].map(([m, v], i) => `${i ? 'L' : 'M'}${X(m).toFixed(1)} ${Y(v).toFixed(1)}`).join(' ');
+
+    box.innerHTML = `
+      <p class="dash-note dh-intro">${F.length} version${F.length === 1 ? '' : 's'} from ${escapeHtml(fmtClock(d.startedAt || F[0].at))} to ${escapeHtml(fmtClock(F[F.length - 1].at))}.
+        ${fast.length ? `<strong>${fast.length} fast jump${fast.length === 1 ? '' : 's'}</strong>: ${d.thresholds.words}+ words typed at ${d.thresholds.wpm}+ words a minute (composing usually runs 10–30), not counting text pasted from the plan. Worth a look, not proof of anything.` : 'No fast jumps: the essay grew at a typing pace throughout.'}</p>
+      <figure class="dh-chart">
+        <figcaption class="sr-only">Words in the draft over time, minutes since the start.</figcaption>
+        <svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Words in the draft over time">
+          <rect class="dh-target" x="${ml}" y="${Y(c.targetWords.max)}" width="${W - ml - mr}" height="${Y(c.targetWords.min) - Y(c.targetWords.max)}"></rect>
+          <text class="dh-axis" x="${ml + 6}" y="${Y(c.targetWords.max) + 12}" text-anchor="start">target ${c.targetWords.min}–${c.targetWords.max} words</text>
+          ${yt.map(v => `<line class="dh-grid" x1="${ml}" x2="${W - mr}" y1="${Y(v)}" y2="${Y(v)}"></line><text class="dh-axis" x="${ml - 6}" y="${Y(v) + 4}" text-anchor="end">${v}</text>`).join('')}
+          ${xt.map(m => `<text class="dh-axis" x="${X(m)}" y="${H - 8}" text-anchor="middle">${m}${m === xt[xt.length - 1] ? ' min' : ''}</text>`).join('')}
+          <path class="dh-line" d="${path}"></path>
+          ${fast.map(i => `<line class="dh-jumpseg" x1="${X(i ? mins(F[i - 1]) : 0)}" y1="${Y(i ? F[i - 1].words : 0)}" x2="${X(mins(F[i]))}" y2="${Y(F[i].words)}"></line>`).join('')}
+          <line class="dh-cursor" id="dh-cursor" y1="${mt}" y2="${H - mb}"></line>
+          ${F.map((f, i) => `<g class="dh-pt${f.change.fast ? ' fast' : ''}" data-i="${i}" tabindex="-1">
+            <circle class="dh-hit" cx="${X(mins(f))}" cy="${Y(f.words)}" r="9"></circle>
+            <circle class="dh-dot" cx="${X(mins(f))}" cy="${Y(f.words)}" r="${f.change.fast ? 5 : 3.5}"></circle></g>`).join('')}
+        </svg>
+        <div class="dh-tip" id="dh-tip" hidden></div>
+      </figure>
+      ${fast.length ? `<ul class="dh-jumps">${fast.map(i => `<li><button class="link-btn plain" data-jump="${i}"><span class="dh-flag" aria-hidden="true">!</span>${escapeHtml(fmtClockS(F[i].at))}: +${F[i].change.typed} words in ${fmtSecs(F[i].change.secs)} (${F[i].change.wpm} a minute)</button></li>`).join('')}</ul>` : ''}
+      <div class="dh-player">
+        <div class="dh-controls">
+          <button class="dh-step" id="dh-prev" aria-label="Previous version">◀</button>
+          <input type="range" id="dh-range" min="0" max="${F.length - 1}" value="${cur}" aria-label="Version">
+          <button class="dh-step" id="dh-next" aria-label="Next version">▶</button>
+          <label class="dh-toggle"><input type="checkbox" id="dh-changes" checked> Show changes</label>
+        </div>
+        <div class="dh-meta" id="dh-meta" aria-live="polite"></div>
+        <div class="dh-text essay-text" id="dh-text"></div>
+        <details class="dh-plan"><summary>Plan at this moment</summary><div id="dh-plan"></div></details>
+      </div>`;
+
+    const range = document.getElementById('dh-range'), meta = document.getElementById('dh-meta'), text = document.getElementById('dh-text');
+    const cursor = document.getElementById('dh-cursor'), tip = document.getElementById('dh-tip');
+    function show(i) {
+      cur = Math.max(0, Math.min(F.length - 1, i));
+      range.value = cur;
+      const f = F[cur], ch = f.change;
+      const delta = ch.added === 0 ? 'no change in length' : `${ch.added > 0 ? '+' : '−'}${Math.abs(ch.added)} words${ch.secs ? ` in ${fmtSecs(ch.secs)}` : ''}`;
+      meta.innerHTML = `<strong>${f.final ? 'Final version' : `Snapshot ${cur + 1} of ${F.length}`}</strong> · ${escapeHtml(fmtClockS(f.at))} · ${f.words} words · ${escapeHtml(delta)}${ch.pasted ? ` (${ch.pasted} pasted from the plan)` : ''}
+        ${ch.fast ? `<span class="dh-badge"><span class="dh-flag" aria-hidden="true">!</span>Fast jump: ${ch.typed} words typed at ${ch.wpm} words a minute</span>` : ''}`;
+      text.innerHTML = diffHtml(diffTokens(cur ? tokens[cur - 1] : [], tokens[cur]), showChanges && cur > 0);
+      document.getElementById('dh-plan').innerHTML = planList(c.stages, f.plan || {});
+      cursor.setAttribute('x1', X(mins(f))); cursor.setAttribute('x2', X(mins(f)));
+      box.querySelectorAll('.dh-pt').forEach(g => g.classList.toggle('on', +g.dataset.i === cur));
+      document.getElementById('dh-prev').disabled = cur === 0;
+      document.getElementById('dh-next').disabled = cur === F.length - 1;
+    }
+    range.oninput = () => show(+range.value);
+    document.getElementById('dh-prev').onclick = () => show(cur - 1);
+    document.getElementById('dh-next').onclick = () => show(cur + 1);
+    document.getElementById('dh-changes').onchange = e => { showChanges = e.target.checked; show(cur); };
+    range.addEventListener('keydown', e => { if (e.key === 'Home') { e.preventDefault(); show(0); } if (e.key === 'End') { e.preventDefault(); show(F.length - 1); } });
+    box.querySelectorAll('[data-jump]').forEach(b => { b.onclick = () => { show(+b.dataset.jump); text.scrollIntoView({ block: 'nearest', behavior: 'smooth' }); }; });
+    const fig = box.querySelector('.dh-chart');
+    box.querySelectorAll('.dh-pt').forEach(g => {
+      const i = +g.dataset.i, f = F[i];
+      g.addEventListener('click', () => show(i));
+      g.addEventListener('mouseenter', () => {
+        const ch = f.change;
+        tip.innerHTML = `<strong>${escapeHtml(fmtClockS(f.at))}</strong><br>${f.words} words · ${ch.added >= 0 ? '+' : '−'}${Math.abs(ch.added)}${ch.secs ? ` in ${fmtSecs(ch.secs)}` : ''}${ch.fast ? `<br><span class="dh-flag" aria-hidden="true">!</span>Fast jump (${ch.wpm} a minute)` : ''}`;
+        const dot = g.querySelector('.dh-dot').getBoundingClientRect(), fr = fig.getBoundingClientRect();
+        tip.hidden = false;
+        const left = Math.min(fr.width - tip.offsetWidth - 4, Math.max(4, dot.left - fr.left - tip.offsetWidth / 2 + dot.width / 2));
+        tip.style.left = left + 'px';
+        tip.style.top = Math.max(0, dot.top - fr.top - tip.offsetHeight - 10) + 'px';
+      });
+      g.addEventListener('mouseleave', () => { tip.hidden = true; });
+    });
+    show(fast.length ? fast[0] : cur);
   }
 
   return { loadStudentHome, renderStudentEssay, openEssay, renderInstructorEssays };

@@ -151,6 +151,35 @@ function wordCount(text) {
   return t ? t.split(/\s+/).length : 0;
 }
 
+// Draft history: a "fast jump" is an interval between snapshots in which the student added
+// at least JUMP_MIN_WORDS words, not counting text pasted from their own plan, at
+// JUMP_WPM words a minute or faster. Composing an essay usually runs 10–30 words a minute;
+// a jump is worth a look, not proof of anything.
+const JUMP_MIN_WORDS = 40, JUMP_WPM = 70;
+
+// For each snapshot (in time order), what changed since the one before (or since the start).
+function historyIntervals(snaps, startedAt, pastes) {
+  const list = (pastes || []).map(p => ({ t: new Date(p.at).getTime(), words: wordCount(p.text) }));
+  let prevT = startedAt ? new Date(startedAt).getTime() : null, prevWords = 0;
+  return snaps.map(sn => {
+    const t = new Date(sn.at).getTime();
+    const added = sn.words - prevWords;
+    const secs = prevT == null ? null : Math.max(1, Math.round((t - prevT) / 1000));
+    const pasted = list.filter(p => (prevT == null || p.t > prevT) && p.t <= t).reduce((a, p) => a + p.words, 0);
+    const typed = added - Math.min(pasted, Math.max(0, added));
+    const wpm = secs ? Math.round(typed / (secs / 60)) : null;
+    const fast = typed >= JUMP_MIN_WORDS && wpm != null && wpm >= JUMP_WPM;
+    prevT = t; prevWords = sn.words;
+    return { added, secs, pasted, typed, wpm, fast };
+  });
+}
+
+// Snapshot word counts plus the latest saved version, when it came after the last snapshot.
+function withFinal(snaps, at, words) {
+  const last = snaps[snaps.length - 1];
+  return last && last.words === words ? snaps : snaps.concat([{ at, words }]);
+}
+
 function str(v, max) {
   return String(v == null ? '' : v).slice(0, max);
 }
@@ -861,8 +890,12 @@ module.exports = function registerEssays(app, deps) {
         FROM studs JOIN roster r ON r.student_id = studs.student_id
         LEFT JOIN essay_work w ON w.essay_id = $1 AND w.student_id = studs.student_id
         ORDER BY r.name NULLS LAST, r.student_id`, [e.id, req.instructor.id, f.id]);
+      const snapRows = (await pool.query(`SELECT student_id, at, word_count AS words FROM essay_snapshots WHERE essay_id=$1 ORDER BY student_id, at`, [e.id])).rows;
+      const snapsBy = {};
+      snapRows.forEach(x => { (snapsBy[x.student_id] = snapsBy[x.student_id] || []).push(x); });
       const rows = r.rows.map(x => ({
         studentId: x.student_id, name: x.name, sections: x.sections || [],
+        fastJumps: x.status ? historyIntervals(withFinal(snapsBy[x.student_id] || [], x.submitted_at || x.updated_at, wordCount(x.draft_text)), x.started_at, x.plan_pastes).filter(i => i.fast).length : 0,
         status: !x.status ? 'not_started' : x.status === 'submitted' ? (x.auto_submitted ? 'auto_submitted' : 'submitted') : 'writing',
         planDone: x.plan ? keys.filter(k => String(x.plan[k] || '').trim()).length : 0,
         planTotal: keys.length,
@@ -888,7 +921,7 @@ module.exports = function registerEssays(app, deps) {
       if (!w) return res.status(404).json({ error: 'This student has not started the essay.' });
       const name = await pool.query('SELECT name FROM roster WHERE student_id=$1', [sid]);
       const sec = w.section_id ? await pool.query('SELECT name FROM sections WHERE id=$1', [w.section_id]) : { rows: [] };
-      const snaps = await pool.query('SELECT COUNT(*)::int AS n FROM essay_snapshots WHERE essay_id=$1 AND student_id=$2', [e.id, sid]);
+      const snaps = await pool.query('SELECT at, word_count AS words FROM essay_snapshots WHERE essay_id=$1 AND student_id=$2 ORDER BY at', [e.id, sid]);
       res.json({
         essay: essayForInstructor(e, await mySchedule(e.id, req.instructor.id)),
         student: { studentId: sid, name: name.rows[0] ? name.rows[0].name : null, section: sec.rows[0] ? sec.rows[0].name : null },
@@ -897,10 +930,39 @@ module.exports = function registerEssays(app, deps) {
           ...pasteSummary(w.plan_pastes, w.draft_text),
           status: w.status, autoSubmitted: w.auto_submitted, startedAt: w.started_at, updatedAt: w.updated_at, submittedAt: w.submitted_at,
           windowOpensAt: w.window_opens_at, windowClosesAt: w.window_closes_at,
-          snapshots: snaps.rows[0].n
+          snapshots: snaps.rows.length,
+          fastJumps: historyIntervals(withFinal(snaps.rows, w.submitted_at || w.updated_at, wordCount(w.draft_text)), w.started_at, w.plan_pastes).filter(i => i.fast).length
         }
       });
     } catch (err) { fail(res, 'paper fetch')(err); }
+  });
+
+  // The draft history behind a paper: every snapshot (draft and plan as they stood), what changed
+  // since the one before, and the final version if it was saved after the last snapshot.
+  app.get('/api/essays/:id/work/:studentId/history', requireInstructor, async (req, res) => {
+    try {
+      const e = await visibleEssay(req, req.params.id);
+      if (!e) return res.status(404).json({ error: 'Essay not found.' });
+      const sid = normalizeId(req.params.studentId);
+      if (!STUDENT_ID_PATTERN.test(sid)) return res.status(400).json({ error: 'Invalid student ID.' });
+      if (!(await canSeeStudent(req.instructor.id, sid))) return res.status(404).json({ error: 'That student is not in your sections.' });
+      const w = await loadWork(e.id, sid);
+      if (!w) return res.status(404).json({ error: 'This student has not started the essay.' });
+      const snaps = (await pool.query(`SELECT at, plan, draft_html, word_count AS words FROM essay_snapshots
+                                       WHERE essay_id=$1 AND student_id=$2 ORDER BY at`, [e.id, sid])).rows;
+      const frames = snaps.map(x => ({ at: x.at, words: x.words, draftHtml: x.draft_html, plan: x.plan }));
+      const last = snaps[snaps.length - 1];
+      if (!last || last.draft_html !== w.draft_html || JSON.stringify(last.plan) !== JSON.stringify(w.plan)) {
+        frames.push({ at: w.submitted_at || w.updated_at, words: wordCount(w.draft_text), draftHtml: w.draft_html, plan: w.plan, final: true });
+      }
+      const changes = historyIntervals(frames, w.started_at, w.plan_pastes);
+      frames.forEach((f, i) => { f.change = changes[i]; });
+      res.json({
+        startedAt: w.started_at, submittedAt: w.submitted_at, status: w.status,
+        thresholds: { words: JUMP_MIN_WORDS, wpm: JUMP_WPM },
+        frames
+      });
+    } catch (err) { fail(res, 'draft history')(err); }
   });
 
   // An essay open right now for this student that they haven't submitted (pauses the tutoring chat).
