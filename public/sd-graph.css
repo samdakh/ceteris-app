@@ -64,3 +64,8 @@ html[data-theme="dark"] .sdg-modes button.on { border-color: var(--gold); }
 .sdg-legend .sw.cs { background: var(--sd-cs); border: 1px solid var(--sd-d); }
 .sdg-legend .sw.ps { background: var(--sd-ps); border: 1px solid var(--sd-s); }
 .sdg-legend .sw.dwl { background: repeating-linear-gradient(45deg, var(--ink) 0 1.5px, transparent 1.5px 5px); border: 1px solid var(--ink); }
+.sdg-mark { font-family: var(--font-mono); font-size: 12px; font-weight: 700; fill: var(--ink); paint-order: stroke; stroke: var(--card); stroke-width: 3px; stroke-linejoin: round; }
+.sdg-mark.old { font-weight: 400; fill: var(--ink-soft); }
+.sdg-mark-tick { stroke: var(--ink); stroke-width: 1.5; }
+.sdg-mark-tick.old { stroke: var(--ink-soft); stroke-width: 1; }
+.sdg-guide.old { opacity: .55; }

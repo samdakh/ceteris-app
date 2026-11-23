@@ -6,7 +6,8 @@
    SDGraph.create(element, cfg, options) → { getState, setState, reset, destroy }
      cfg      { demand: {a, b}, supply: {c, d}, step, axes: {q, qUnit, p},
                 tools: {shift, tax, subsidy, ceiling, floor},
-                show: {values, surplus, wedge, dwl, shortage} }
+                show: {values, surplus, wedge, dwl, shortage},
+                hide: [question keys whose numbers students must work out: CS, PS, revenue, cost, DWL, gap] }
      options  { state, onChange(state, solved), interactive (default true), readouts (default true),
                 caption, idPrefix }
    The math lives in sd-math.js (window.SDMath). */
@@ -75,6 +76,35 @@
       return [[q0, C + cfg.supply.d * q0], [qEnd, C + cfg.supply.d * qEnd]];
     }
     function centroid(pts) { const n = pts.length; return [pts.reduce((t, p) => t + p[0], 0) / n, pts.reduce((t, p) => t + p[1], 0) / n]; }
+    const hidden = k => (cfg.hide || []).includes(k);
+    // Push labels apart along one axis (sorted by pos) so none overlap; keep them inside [lo, hi].
+    function dodge(items, lo, hi) {
+      for (let i = 1; i < items.length; i++) { const gap = (items[i - 1].size + items[i].size) / 2 + 2; if (items[i].pos < items[i - 1].pos + gap) items[i].pos = items[i - 1].pos + gap; }
+      const last = items[items.length - 1];
+      if (last && last.pos + last.size / 2 > hi) {
+        last.pos = hi - last.size / 2;
+        for (let i = items.length - 2; i >= 0; i--) { const gap = (items[i].size + items[i + 1].size) / 2 + 2; if (items[i].pos > items[i + 1].pos - gap) items[i].pos = items[i + 1].pos - gap; }
+      }
+      if (items[0] && items[0].pos - items[0].size / 2 < lo) {   // too crowded for both ends: start at lo and let it run over
+        items[0].pos = lo + items[0].size / 2;
+        for (let i = 1; i < items.length; i++) { const gap = (items[i - 1].size + items[i].size) / 2 + 2; if (items[i].pos < items[i - 1].pos + gap) items[i].pos = items[i - 1].pos + gap; }
+      }
+    }
+    // The values of the points on the graph, marked on the axes like ticks; regular ticks that would clash give way.
+    function axisMarks(marks, pTicks, qTicks) {
+      const uniq = [];
+      marks.forEach(m => { const o = uniq.find(u => u.ax === m.ax && Math.abs(u.v - m.v) < 1e-6); if (!o) uniq.push(Object.assign({}, m)); else if (m.cls === 'now') o.cls = 'now'; });
+      const charW = 7;
+      const ps = uniq.filter(m => m.ax === 'p').map(m => Object.assign(m, { text: money(m.v), pos: Y(m.v), size: 13 })).sort((a, b) => a.pos - b.pos);
+      const qs = uniq.filter(m => m.ax === 'q').map(m => Object.assign(m, { text: qty(m.v), pos: X(m.v) })).map(m => Object.assign(m, { size: m.text.length * charW + 6 })).sort((a, b) => a.pos - b.pos);
+      dodge(ps, mt - 6, mt + ph + 6); dodge(qs, ml - 20, W - 4);
+      let out = '';
+      pTicks.forEach(p => { if (!ps.some(m => Math.abs(m.pos - Y(p)) < 13)) out += `<text class="sdg-tick" x="${ml - 8}" y="${(Y(p) + 4).toFixed(1)}" text-anchor="end">${money(p)}</text>`; });
+      qTicks.forEach(q => { const w = qty(q).length * charW; if (!qs.some(m => Math.abs(m.pos - X(q)) < (m.size + w) / 2 + 2)) out += `<text class="sdg-tick" x="${X(q).toFixed(1)}" y="${mt + ph + 18}" text-anchor="middle">${qty(q)}</text>`; });
+      ps.forEach(m => { out += line(ml - 5, Y(m.v), ml, Y(m.v), 'sdg-mark-tick ' + m.cls) + `<text class="sdg-mark ${m.cls}" x="${ml - 8}" y="${(m.pos + 4).toFixed(1)}" text-anchor="end">${m.text}</text>`; });
+      qs.forEach(m => { out += line(X(m.v), mt + ph, X(m.v), mt + ph + 5, 'sdg-mark-tick ' + m.cls) + `<text class="sdg-mark ${m.cls}" x="${m.pos.toFixed(1)}" y="${mt + ph + 18}" text-anchor="middle">${m.text}</text>`; });
+      return out;
+    }
     let avoid = [];   // handle positions (px) that area labels step aside from
     function areaLabel(pts, text, cls) {
       const c = centroid(pts).map((v, i) => i ? Y(v) : X(v));
@@ -96,8 +126,9 @@
       let g = '';
 
       // Grid and axes
-      for (let q = 0; q <= qMax + 1e-9; q += qStep) g += line(X(q), mt, X(q), mt + ph, 'sdg-grid') + `<text class="sdg-tick" x="${X(q).toFixed(1)}" y="${mt + ph + 18}" text-anchor="middle">${qty(q)}</text>`;
-      for (let p = 0; p <= pMax + 1e-9; p += pStep) g += line(ml, Y(p), ml + pw, Y(p), 'sdg-grid') + `<text class="sdg-tick" x="${ml - 8}" y="${(Y(p) + 4).toFixed(1)}" text-anchor="end">${money(p)}</text>`;
+      const qTicks = [], pTicks = [];
+      for (let q = 0; q <= qMax + 1e-9; q += qStep) { g += line(X(q), mt, X(q), mt + ph, 'sdg-grid'); qTicks.push(q); }
+      for (let p = 0; p <= pMax + 1e-9; p += pStep) { g += line(ml, Y(p), ml + pw, Y(p), 'sdg-grid'); pTicks.push(p); }
       g += line(ml, mt, ml, mt + ph, 'sdg-axis') + line(ml, mt + ph, ml + pw, mt + ph, 'sdg-axis');
       g += `<text class="sdg-axis-title" x="${ml + pw / 2}" y="${H - 8}" text-anchor="middle">${esc(cfg.axes.q)}${cfg.axes.qUnit ? ` (${esc(cfg.axes.qUnit)})` : ''}</text>`;
       g += `<text class="sdg-axis-title" transform="translate(14 ${mt + ph / 2}) rotate(-90)" text-anchor="middle">${esc(cfg.axes.p)}</text>`;
@@ -147,22 +178,25 @@
       }
       g += '</g>';
       // Direct labels at the curves' right ends (identity never by colour alone).
-      const lab = (pts, text, cls) => { const [q, p] = pts[1]; return `<text class="sdg-curve-label ${cls}" x="${Math.min(X(q) + 6, W - 4).toFixed(1)}" y="${Math.max(mt + 12, Math.min(Y(p) + (cls === 'sdg-dl' ? -6 : 4), mt + ph - 4)).toFixed(1)}">${text}</text>`; };
-      if (shiftedD) g += lab(demandSeg(D0.a), 'D₀', 'sdg-dl sdg-old-label');
-      if (shiftedS) g += lab(supplySeg(S0.c), 'S₀', 'sdg-sl sdg-old-label');
+      const labPos = (pts, cls) => { const [q, p] = pts[1]; return [Math.min(X(q) + 6, W - 4), Math.max(mt + 12, Math.min(Y(p) + (cls.startsWith('sdg-dl') ? -6 : 4), mt + ph - 4))]; };
+      const lab = (pts, text, cls, nudge) => { const [x, y] = labPos(pts, cls); return `<text class="sdg-curve-label ${cls}" x="${x.toFixed(1)}" y="${(y + (nudge || 0)).toFixed(1)}">${text}</text>`; };
+      // An old label that would sit on top of the new one moves aside (away from it).
+      const apart = (oldPts, newPts, cls) => { const yo = labPos(oldPts, cls)[1], yn = labPos(newPts, cls)[1], d = yo - yn; return Math.abs(d) < 14 ? (d >= 0 ? 1 : -1) * (14 - Math.abs(d)) : 0; };
+      if (shiftedD) g += lab(demandSeg(D0.a), 'D₀', 'sdg-dl sdg-old-label', apart(demandSeg(D0.a), dSeg, 'sdg-dl'));
+      if (shiftedS) g += lab(supplySeg(S0.c), 'S₀', 'sdg-sl sdg-old-label', apart(supplySeg(S0.c), sSeg, 'sdg-sl'));
       g += lab(dSeg, shiftedD ? 'D₁' : 'D', 'sdg-dl') + lab(sSeg, shiftedS ? 'S₁' : 'S', 'sdg-sl');
 
-      // Equilibrium points and their values on the axes.
-      const guide = (q, p, textP, textQ, cls) => {
-        let out = line(ml, Y(p), X(q), Y(p), 'sdg-guide ' + (cls || '')) + line(X(q), Y(p), X(q), mt + ph, 'sdg-guide ' + (cls || ''));
-        if (c.values && textP) out += `<text class="sdg-guide-label" x="${ml + 4}" y="${(Y(p) - 5).toFixed(1)}">${textP}</text>`;
-        if (c.values && textQ) out += `<text class="sdg-guide-label" x="${(X(q) + 4).toFixed(1)}" y="${mt + ph - 6}">${textQ}</text>`;
-        return out;
-      };
+      // Equilibrium points, dashed guides to the axes, and their values marked on the axes.
+      const marks = [];
+      const mark = (ax, v, cls) => { if (c.values && v != null && isFinite(v) && v >= 0) marks.push({ ax, v, cls: cls || 'now' }); };
+      const guide = (q, p, cls) => line(ml, Y(p), X(q), Y(p), 'sdg-guide ' + (cls || '')) + line(X(q), Y(p), X(q), mt + ph, 'sdg-guide ' + (cls || ''));
+      const before = () => { g += guide(s.e0.Q, s.e0.P, 'old'); mark('p', s.e0.P, 'old'); mark('q', s.e0.Q, 'old'); };
       if (s.Q > 0) {
         if (isWedge && (s.tax || s.subsidy)) {
+          before();
           if (c.wedge) {
-            g += guide(s.Q, s.Pb, '', `Q = ${qty(s.Q)}`) + line(ml, Y(s.Ps), X(s.Q), Y(s.Ps), 'sdg-guide');
+            g += guide(s.Q, s.Pb) + line(ml, Y(s.Ps), X(s.Q), Y(s.Ps), 'sdg-guide');
+            mark('p', s.Pb); mark('p', s.Ps); mark('q', s.Q);
             if (c.values) {
               // Beside the two points, on the side away from the surplus areas.
               const up = s.tax ? [s.Pb, s.Ps] : [s.Ps, s.Pb], names = s.tax ? ['Buyers pay', 'Sellers keep'] : ['Sellers get', 'Buyers pay'];
@@ -170,13 +204,18 @@
               g += `<text class="sdg-guide-label" x="${(X(s.Q) + 9).toFixed(1)}" y="${(Y(up[1]) + 15).toFixed(1)}">${names[1]} ${money(up[1])}</text>`;
             }
             g += `<circle class="sdg-pt" cx="${X(s.Q)}" cy="${Y(s.Pb)}" r="4.5"/><circle class="sdg-pt" cx="${X(s.Q)}" cy="${Y(s.Ps)}" r="4.5"/>`;
-          } else g += guide(s.e1.Q, s.e1.P, '', `Q = ${qty(s.Q)}`) + `<circle class="sdg-pt" cx="${X(s.e1.Q)}" cy="${Y(s.e1.P)}" r="5"/>`;
+          } else { g += guide(s.e1.Q, s.e1.P) + `<circle class="sdg-pt" cx="${X(s.e1.Q)}" cy="${Y(s.e1.P)}" r="5"/>`; mark('p', s.e1.P); mark('q', s.Q); }
           g += `<circle class="sdg-pt0" cx="${X(s.e0.Q)}" cy="${Y(s.e0.P)}" r="4.5"/>`;
         } else if (ctl) {
-          g += `<circle class="sdg-pt0" cx="${X(s.e1.Q)}" cy="${Y(s.e1.P)}" r="4.5"/>`;
+          // The free-market equilibrium (for comparison), then the quantities at the controlled price.
+          g += guide(s.e1.Q, s.e1.P, 'old') + `<circle class="sdg-pt0" cx="${X(s.e1.Q)}" cy="${Y(s.e1.P)}" r="4.5"/>`;
+          mark('p', s.e1.P, 'old'); mark('q', s.e1.Q, 'old'); mark('p', ctl.price);
+          const qs = c.shortage ? [ctl.Qd, ctl.Qs] : [s.Q];
+          qs.forEach(q => { if (q <= qMax) { g += line(X(q), Y(ctl.price), X(q), mt + ph, 'sdg-guide'); mark('q', q); } });
         } else {
-          if (shiftedD || shiftedS) g += `<circle class="sdg-pt0" cx="${X(s.e0.Q)}" cy="${Y(s.e0.P)}" r="4.5"/>`;
-          g += guide(s.e1.Q, s.e1.P, `P = ${money(s.e1.P)}`, `Q = ${qty(s.e1.Q)}`) + `<circle class="sdg-pt" cx="${X(s.e1.Q)}" cy="${Y(s.e1.P)}" r="5"/>`;
+          if (shiftedD || shiftedS) { before(); g += `<circle class="sdg-pt0" cx="${X(s.e0.Q)}" cy="${Y(s.e0.P)}" r="4.5"/>`; }
+          g += guide(s.e1.Q, s.e1.P) + `<circle class="sdg-pt" cx="${X(s.e1.Q)}" cy="${Y(s.e1.P)}" r="5"/>`;
+          mark('p', s.e1.P); mark('q', s.e1.Q);
         }
       }
 
@@ -187,7 +226,7 @@
         if (s.control && s.control.binding && c.shortage) {
           const q1 = Math.min(s.control.Qd, s.control.Qs), q2 = Math.min(qMax, Math.max(s.control.Qd, s.control.Qs)), yB = yP + (state.mode === 'ceiling' ? 14 : -14);
           g += line(X(q1), yB, X(q2), yB, 'sdg-gap') + line(X(q1), yP, X(q1), yB, 'sdg-gap') + line(X(q2), yP, X(q2), yB, 'sdg-gap');
-          g += `<text class="sdg-gap-label" x="${((X(q1) + X(q2)) / 2).toFixed(1)}" y="${(yB + (state.mode === 'ceiling' ? 13 : -5)).toFixed(1)}" text-anchor="middle">${state.mode === 'ceiling' ? 'Shortage' : 'Surplus'}${c.values ? ' ' + qty(q2 - q1) : ''}</text>`;
+          g += `<text class="sdg-gap-label" x="${((X(q1) + X(q2)) / 2).toFixed(1)}" y="${(yB + (state.mode === 'ceiling' ? 13 : -5)).toFixed(1)}" text-anchor="middle">${state.mode === 'ceiling' ? 'Shortage' : 'Surplus'}${c.values && !hidden('gap') ? ' ' + qty(q2 - q1) : ''}</text>`;
           g += `<circle class="sdg-pt" cx="${X(s.control.Qd)}" cy="${yP}" r="4"/><circle class="sdg-pt" cx="${X(s.control.Qs)}" cy="${yP}" r="4"/>`;
         }
         g += `<text class="sdg-price-label" x="${ml + pw - 30}" y="${(yP - 7).toFixed(1)}" text-anchor="end">${name}${c.values ? ' ' + money(state.price) : ''}${s.control && !s.control.binding ? ' (not binding)' : ''}</text>`;
@@ -196,6 +235,8 @@
           g += handle(ml + pw - 12, yP, 'P', `${name} price`, state.price, money(state.price));
         }
       }
+
+      g += axisMarks(marks, pTicks, qTicks);
 
       // Handles for the curves (also the keyboard targets).
       if (interactive) {
@@ -226,7 +267,7 @@
 
     function renderReadouts(s) {
       if (!readEl) return;
-      const c = cfg.show, v = x => (c.values ? x : '…');
+      const c = cfg.show, v = (x, k) => (c.values && !(k && hidden(k)) ? x : '…');
       const rows = [];
       const before = `P ${money(s.e0.P)}, Q ${qty(s.e0.Q)}`;
       rows.push(['Before', c.values ? before : '—']);
@@ -234,19 +275,19 @@
         const amt = s.tax || s.subsidy;
         rows.push([state.mode === 'tax' ? 'Tax per unit' : 'Subsidy per unit', amt ? v(money(amt)) + (s.wedge.on ? ` on ${s.wedge.on}` : '') : 'none yet']);
         rows.push(['Quantity traded', v(qty(s.Q))]);
-        if (c.wedge) { rows.push(['Buyers pay', v(money(s.Pb))]); rows.push(['Sellers ' + (s.tax ? 'keep' : 'receive'), v(money(s.Ps))]); rows.push([s.tax ? 'Tax revenue' : 'Subsidy cost', v(money(s.tax ? s.revenue : s.cost))]); }
+        if (c.wedge) { rows.push(['Buyers pay', v(money(s.Pb))]); rows.push(['Sellers ' + (s.tax ? 'keep' : 'receive'), v(money(s.Ps))]); rows.push([s.tax ? 'Tax revenue' : 'Subsidy cost', v(money(s.tax ? s.revenue : s.cost), s.tax ? 'revenue' : 'cost')]); }
       } else if (s.control) {
         rows.push([`Price ${s.control.type}`, v(money(s.control.price)) + (s.control.binding ? '' : ' (not binding)')]);
         if (c.shortage && s.control.binding) {
           rows.push(['Quantity demanded', v(qty(s.control.Qd))]); rows.push(['Quantity supplied', v(qty(s.control.Qs))]);
-          rows.push([s.control.type === 'ceiling' ? 'Shortage' : 'Surplus (unsold)', v(qty(s.control.shortage || s.control.surplus))]);
+          rows.push([s.control.type === 'ceiling' ? 'Shortage' : 'Surplus (unsold)', v(qty(s.control.shortage || s.control.surplus), 'gap')]);
         }
         rows.push(['Quantity traded', v(qty(s.Q))]);
       } else {
         rows.push(['Now', c.values ? `P ${money(s.e1.P)}, Q ${qty(s.e1.Q)}` : '—']);
       }
-      if (c.surplus) { rows.push(['Consumer surplus', v(money(s.CS))]); rows.push(['Producer surplus', v(money(s.PS))]); }
-      if (c.dwl && state.mode !== 'shift') rows.push(['Deadweight loss', v(money(s.DWL))]);
+      if (c.surplus) { rows.push(['Consumer surplus', v(money(s.CS), 'CS')]); rows.push(['Producer surplus', v(money(s.PS), 'PS')]); }
+      if (c.dwl && state.mode !== 'shift') rows.push(['Deadweight loss', v(money(s.DWL), 'DWL')]);
       readEl.innerHTML = `<dl>${rows.map(([k, x]) => `<div><dt>${esc(k)}</dt><dd>${x}</dd></div>`).join('')}</dl>
         <div class="sdg-legend"><span><i class="sw d"></i>Demand</span><span><i class="sw s"></i>Supply</span>${c.surplus ? '<span><i class="sw cs"></i>CS</span><span><i class="sw ps"></i>PS</span>' : ''}${c.dwl ? '<span><i class="sw dwl"></i>Deadweight loss</span>' : ''}</div>`;
     }

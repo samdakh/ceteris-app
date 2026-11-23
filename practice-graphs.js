@@ -113,27 +113,59 @@ function feedbackFor(cfg, got, want, either) {
   return 'Close, but check the direction: does this increase or decrease it?';
 }
 
-// The outcome of a task, in a sentence, for worked solutions and the coach.
-function outcomeText(cfg, target) {
+// The outcome of a task, in a sentence, for worked solutions and the coach. Parts that would give
+// away a number in `omit` (question keys still to come) are left out.
+function outcomeText(cfg, target, omit) {
+  omit = omit || [];
   const s = SD.solve(cfg, target), parts = [];
+  const add = (keys, text) => { if (!keys.some(k => omit.includes(k))) parts.push(text); };
   if (target.mode === 'tax' || target.mode === 'subsidy') {
-    parts.push(`Quantity falls from ${qty(s.e0.Q)} to ${qty(s.Q)}`.replace('falls', s.Q > s.e0.Q ? 'rises' : 'falls'));
-    parts.push(`buyers pay ${money(s.Pb)} and sellers ${target.mode === 'tax' ? 'keep' : 'receive'} ${money(s.Ps)}`);
-    parts.push(target.mode === 'tax' ? `tax revenue is ${money(s.revenue)}` : `the subsidy costs ${money(s.cost)}`);
-    parts.push(`the deadweight loss is ${money(s.DWL)}`);
+    add(['Q'], `quantity ${s.Q > s.e0.Q ? 'rises' : 'falls'} from ${qty(s.e0.Q)} to ${qty(s.Q)}`);
+    add(['Pb', 'Ps'], `buyers pay ${money(s.Pb)} and sellers ${target.mode === 'tax' ? 'keep' : 'receive'} ${money(s.Ps)}`);
+    if (target.mode === 'tax') add(['revenue'], `tax revenue is ${money(s.revenue)}`); else add(['cost'], `the subsidy costs ${money(s.cost)}`);
+    add(['CS', 'PS'], `consumer surplus is ${money(s.CS)} and producer surplus ${money(s.PS)}`);
+    add(['DWL'], `the deadweight loss is ${money(s.DWL)}`);
   } else if (s.control) {
-    if (!s.control.binding) parts.push(`at ${money(s.control.price)} the ${s.control.type} doesn’t bind: the market stays at ${money(s.e1.P)} and ${qty(s.e1.Q)}`);
+    if (!s.control.binding) add(['P', 'Q'], `at ${money(s.control.price)} the ${s.control.type} doesn’t bind: the market stays at ${money(s.e1.P)} and ${qty(s.e1.Q)}`);
     else {
-      parts.push(`at ${money(s.control.price)}, buyers want ${qty(s.control.Qd)} and sellers offer ${qty(s.control.Qs)}`);
-      parts.push(s.control.type === 'ceiling' ? `a shortage of ${qty(s.control.shortage)}` : `a surplus of ${qty(s.control.surplus)}`);
-      parts.push(`only ${qty(s.Q)} are traded, and the deadweight loss is ${money(s.DWL)}`);
+      add(['gap'], `at ${money(s.control.price)}, buyers want ${qty(s.control.Qd)} and sellers offer ${qty(s.control.Qs)}`);
+      add(['gap'], s.control.type === 'ceiling' ? `a shortage of ${qty(s.control.shortage)}` : `a surplus of ${qty(s.control.surplus)}`);
+      add(['Q'], `only ${qty(s.Q)} are traded`);
+      add(['CS', 'PS'], `consumer surplus is ${money(s.CS)} and producer surplus ${money(s.PS)}`);
+      add(['DWL'], `the deadweight loss is ${money(s.DWL)}`);
     }
   } else {
-    parts.push(`the equilibrium moves from ${money(s.e0.P)} and ${qty(s.e0.Q)} to ${money(s.e1.P)} and ${qty(s.e1.Q)}`);
+    add(['P', 'Q'], `the equilibrium moves from ${money(s.e0.P)} and ${qty(s.e0.Q)} to ${money(s.e1.P)} and ${qty(s.e1.Q)}`);
+    add(['CS', 'PS'], `consumer surplus is ${money(s.CS)} and producer surplus ${money(s.PS)}`);
   }
+  if (!parts.length) return '';
   const text = parts.join('; ');
   return text.charAt(0).toUpperCase() + text.slice(1) + '.';
 }
+
+// Why the graph moves the way it does, without any of the numbers students work out next.
+function whyText(cfg, t) {
+  const tg = t.target, w = SD.wedge(tg), amt = money(Math.abs(w.amount || 0));
+  const either = t.either ? ' Either way, the result is the same: it doesn’t matter which side of the market pays.' : '';
+  if (tg.mode === 'tax') return (w.on === 'sellers'
+    ? `Sellers now hand ${amt} of every unit’s price to the government, so they need ${amt} more to supply any given quantity: supply shifts up by ${amt}.`
+    : `Buyers now pay ${amt} per unit to the government on top of the price, so they’ll pay sellers ${amt} less for any given quantity: demand shifts down by ${amt}.`) + either;
+  if (tg.mode === 'subsidy') return (w.on === 'sellers'
+    ? `Sellers now get ${amt} per unit on top of the price, so they’ll supply any given quantity for ${amt} less: supply shifts down by ${amt}.`
+    : `Buyers now get ${amt} back per unit, so they’ll pay sellers ${amt} more for any given quantity: demand shifts up by ${amt}.`) + either;
+  if (tg.mode === 'ceiling' || tg.mode === 'floor') {
+    const s = SD.solve(cfg, tg), legal = tg.mode === 'ceiling' ? 'maximum' : 'minimum';
+    return `A price ${tg.mode} is a legal ${legal} price. ` + (s.control && s.control.binding
+      ? `It ${tg.mode === 'ceiling' ? 'is below' : 'is above'} the equilibrium price, so it binds: the market can’t reach equilibrium.`
+      : `It ${tg.mode === 'ceiling' ? 'is above' : 'is below'} the equilibrium price, so it doesn’t bind.`);
+  }
+  const parts = [];
+  if (tg.dShift) parts.push(tg.dShift > 0 ? 'buyers are willing to pay more for any given quantity (demand increases)' : 'buyers are willing to pay less for any given quantity (demand decreases)');
+  if (tg.sShift) parts.push(tg.sShift < 0 ? 'sellers will supply any given quantity at a lower price (supply increases)' : 'sellers need a higher price to supply any given quantity (supply decreases)');
+  return parts.length ? parts.join(', and ').replace(/^./, c => c.toUpperCase()) + '.' : '';
+}
+
+const HIDEABLE = ['CS', 'PS', 'revenue', 'cost', 'DWL', 'gap'];
 
 // An exercise object, in the same shape as the catalog's (see practice-catalog.js).
 function graphExercise(row) {
@@ -159,23 +191,22 @@ function graphExercise(row) {
       const steps = [];
       cfg.tasks.forEach((t0, i) => {
         const t = taskFor(cfg, t0), n = i + 1, s = SD.solve(cfg, t.target);
-        const hasQs = t.ask.length > 0;
         const graphCfg = { demand: cfg.demand, supply: cfg.supply, step: cfg.step, axes: cfg.axes, tools: cfg.tools,
-          show: Object.assign({}, cfg.show, hasQs ? { values: false } : {}) };
+          show: cfg.show, hide: t.ask.filter(k => HIDEABLE.includes(k)) };
         steps.push({
           key: `t${n}`, kind: 'graph', label: cfg.tasks.length > 1 ? `Task ${n}: graph` : 'Graph',
           prompt: fillPrompt(t.prompt, t), graph: graphCfg, target: t.target, either: t.either,
           hints: hintsFor(t),
-          worked: `${SD.describe(cfg, t.target, money)}. ${outcomeText(cfg, t.target)}`
+          worked: [`${SD.describe(cfg, t.target, money)}.`, whyText(cfg, t), outcomeText(cfg, t.target, t.ask)].filter(Boolean).join(' ')
         });
-        t.ask.forEach(k => {
+        t.ask.forEach((k, j) => {
           const q = SD.QUESTIONS[k], value = r2(q.get(s));
           steps.push({
             key: `t${n}-${k}`, kind: 'number', label: (cfg.tasks.length > 1 ? `Task ${n}: ` : '') + q.label,
             prompt: SD.questionPrompt(k, t.target.mode),
             answer: q.money ? { value, unit: '$', tol: 0.011 } : { value, unit: qUnit, tol: 0.011 },
             hints: hintsForQuestion(k, t.target.mode),
-            worked: `${q.label}: **${q.money ? money(value) : qty(value) + ' ' + qUnit}**. ${outcomeText(cfg, t.target)}`
+            worked: [`${q.label}: **${q.money ? money(value) : qty(value) + ' ' + qUnit}**.`, outcomeText(cfg, t.target, t.ask.slice(j + 1))].filter(Boolean).join(' ')
           });
         });
       });
