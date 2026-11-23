@@ -337,3 +337,67 @@ td.pg-cell.first-col { border-left: 2px solid var(--line); }
 .ak-sub ul, .ak-sub ol { margin: 4px 0 0; padding-left: 1.3em; }
 .ak-sub li { margin: 3px 0; }
 .ak-prob .pc-statement { margin-bottom: 8px; }
+
+/* ---------- Supply and demand graphs ---------- */
+.pc-graph { margin: 4px 0 2px; }
+.pc-graph-done { margin-top: 8px; }
+.pc-graph-done summary { font-family: var(--font-mono); font-size: 12px; cursor: pointer; text-decoration: underline; text-decoration-color: var(--gold); text-underline-offset: 3px; width: fit-content; }
+.pc-graph-done .pc-graph { margin-top: 8px; }
+.pc-lab-head { font-family: var(--font-display); font-size: 19px; font-weight: 600; margin: 26px 0 0; }
+.pc-lab-icon { background: var(--surface-3); color: var(--ink); box-shadow: none; }
+.pc-labview .pc-lab-intro { margin: 0 0 14px; }
+.pc-graphbox { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
+.pc-graphbox-text { flex: 1; min-width: 240px; }
+.pc-graphbox-text h2 { margin: 0 0 2px; }
+.pc-graphbox-text p { margin: 0; }
+
+/* Editor */
+.ge-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.05fr); gap: 18px; align-items: start; }
+.ge-preview { position: sticky; top: 76px; background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 14px 16px; }
+.ge-preview-head h2 { margin: 0; }
+.ge-preview-head { margin-bottom: 10px; }
+.ge-preview .sdg-body { grid-template-columns: minmax(0, 1fr); }
+@media (max-width: 1100px) { .ge-grid { grid-template-columns: minmax(0, 1fr); } .ge-preview { position: static; } }
+.ge-form .box { margin-bottom: 14px; }
+.ge-form h2 { margin: 0 0 10px; }
+.ge-boxhead { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 8px; }
+.ge-boxhead h2 { margin: 0; }
+.ge-boxhead .role-btn { display: inline-flex; align-items: center; gap: 6px; padding: 7px 14px; font-size: 13.5px; }
+.ge-field { display: flex; flex-direction: column; gap: 4px; margin-bottom: 10px; flex: 1; min-width: 0; }
+.ge-field > span { font-size: 13px; font-weight: 600; }
+.ge-field em { font-weight: 400; font-style: normal; color: var(--ink-soft); }
+.ge-field input, .ge-field textarea { font-family: var(--font-body); font-size: 14.5px; padding: 8px 10px; border: 1.5px solid var(--line); border-radius: 8px; background: var(--card); color: var(--ink); width: 100%; box-sizing: border-box; }
+.ge-field textarea { resize: vertical; line-height: 1.45; }
+.ge-field input:focus, .ge-field textarea:focus, .ge-num:focus { outline: none; border-color: var(--focus); box-shadow: 0 0 0 3px var(--accent-strong); }
+.ge-row { display: flex; gap: 12px; flex-wrap: wrap; }
+.ge-narrow { flex: 0 0 90px; }
+.ge-eq { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; font-family: var(--font-mono); font-size: 14px; margin-bottom: 8px; }
+.ge-curve { font-family: var(--font-body); font-weight: 600; min-width: 64px; }
+.ge-curve.d { color: var(--sd-d); }
+.ge-curve.s { color: var(--sd-s); }
+.ge-num { width: 72px; font-family: var(--font-mono); font-size: 14px; padding: 6px 8px; border: 1.5px solid var(--line); border-radius: 6px; background: var(--card); color: var(--ink); text-align: right; }
+.ge-note { font-size: 13px; color: var(--ink-soft); margin: 2px 0 10px; }
+.ge-note.bad { color: var(--error); }
+.ge-note code { font-family: var(--font-mono); font-size: 12px; background: var(--surface-2); padding: 0 4px; border-radius: 4px; }
+.ge-checks { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+@media (max-width: 700px) { .ge-checks { grid-template-columns: 1fr; } }
+.ge-checks fieldset, .ge-asks { border: none; margin: 0; padding: 0; }
+.ge-checks legend, .ge-asks legend { font-size: 13px; font-weight: 600; margin-bottom: 6px; padding: 0; }
+.ge-checks label, .ge-asks label, .ge-either, .ge-random { display: flex; align-items: baseline; gap: 8px; font-size: 13.5px; margin: 4px 0; }
+.ge-checks input, .ge-asks input, .ge-either input, .ge-random input { accent-color: var(--blue); }
+html[data-theme="dark"] .ge-checks input, html[data-theme="dark"] .ge-asks input, html[data-theme="dark"] .ge-either input, html[data-theme="dark"] .ge-random input { accent-color: var(--gold); }
+.ge-tasks { list-style: none; margin: 10px 0; padding: 0; }
+.ge-task { border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px; margin-bottom: 10px; background: var(--surface-2); }
+.ge-answer { font-size: 14px; margin: 2px 0 8px; }
+.ge-task-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px; margin-bottom: 8px; }
+.ge-task-actions .role-btn { padding: 6px 12px; font-size: 13px; }
+.ge-asks { margin-top: 6px; display: grid; grid-template-columns: 1fr 1fr; gap: 0 12px; }
+.ge-asks legend { grid-column: 1 / -1; }
+@media (max-width: 600px) { .ge-asks { grid-template-columns: 1fr; } }
+.ge-val { font-family: var(--font-mono); font-size: 12px; color: var(--ink-soft); }
+.ge-random { font-weight: 600; margin-top: 8px; }
+.ge-actions { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; margin: 4px 0 30px; }
+.ge-remove { color: var(--error); text-decoration-color: var(--error); }
+.ge-status { font-size: 13.5px; color: var(--error); }
+.ge-empty { padding: 4px 0; }
+.ge-eqhint { font-family: var(--font-body); font-size: 13px; color: var(--ink-soft); }

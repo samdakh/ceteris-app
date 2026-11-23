@@ -23,6 +23,8 @@
 <script src="/vendor/purify.js"></script>
 <script src="/essays-ui.js"></script>
 <script src="/admin-ui.js"></script>
+<script src="/sd-math.js"></script>
+<script src="/sd-graph.js"></script>
 <script src="/practice-ui.js"></script>
 <style>
   :root {
@@ -391,6 +393,7 @@
 <link rel="stylesheet" href="/essays.css">
 <link rel="stylesheet" href="/admin.css">
 <link rel="stylesheet" href="/practice.css">
+<link rel="stylesheet" href="/sd-graph.css">
 </head>
 <body>
 <div id="app"></div>
@@ -503,7 +506,7 @@
   function render() {
     ({ 'landing': renderLanding, 'student-login': renderStudentLogin, 'student-chat': renderStudentChat,
        'instructor-login': renderInstructorLogin, 'instructor': renderInstructor,
-       'student-essay': () => Essays.renderStudentEssay(), 'student-practice': () => Practice.renderStudentPractice(), 'student-exercise': () => Practice.renderStudentExercise() })[state.view]();
+       'student-essay': () => Essays.renderStudentEssay(), 'student-practice': () => Practice.renderStudentPractice(), 'student-exercise': () => Practice.renderStudentExercise(), 'student-lab': () => Practice.renderStudentLab() })[state.view]();
     bindThemeSwitches();
   }
 

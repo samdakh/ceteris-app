@@ -11,6 +11,7 @@ window.CeterisPractice = function (C) {
   const ICON_DONE = '<svg width="18" height="18" viewBox="0 0 16 16" fill="none" aria-hidden="true"><circle cx="8" cy="8" r="8" fill="currentColor"/><path d="M4.8 8.3 7 10.4l4.2-4.6" stroke="var(--card)" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>';
   const ICON_SHOWN = '<svg width="18" height="18" viewBox="0 0 16 16" fill="none" aria-hidden="true"><circle cx="8" cy="8" r="7.2" stroke="currentColor" stroke-width="1.6"/><path d="M3.8 8s1.6-2.6 4.2-2.6S12.2 8 12.2 8 10.6 10.6 8 10.6 3.8 8 3.8 8Z" stroke="currentColor" stroke-width="1.3"/><circle cx="8" cy="8" r="1.3" fill="currentColor"/></svg>';
   const ICON_BOOK = '<svg width="18" height="18" viewBox="0 0 20 20" fill="none" aria-hidden="true"><path d="M3 4.2c2.4-.9 4.8-.9 7 .6v11c-2.2-1.5-4.6-1.5-7-.6v-11Zm14 0c-2.4-.9-4.8-.9-7 .6v11c2.2-1.5 4.6-1.5 7-.6v-11Z" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/></svg>';
+  const ICON_GRAPH = '<svg width="18" height="18" viewBox="0 0 20 20" fill="none" aria-hidden="true"><path d="M3 3v14h14" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/><path d="M5.5 5.5 15 14M5.5 14 15 5.5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>';
   const ICON_DICE = '<svg width="16" height="16" viewBox="0 0 20 20" fill="none" aria-hidden="true"><rect x="3" y="3" width="14" height="14" rx="3.5" stroke="currentColor" stroke-width="1.6"/><circle cx="7" cy="7" r="1.3" fill="currentColor"/><circle cx="13" cy="13" r="1.3" fill="currentColor"/><circle cx="10" cy="10" r="1.3" fill="currentColor"/></svg>';
 
   const isDone = st => st && (st.status === 'solved' || st.status === 'shown');
@@ -66,12 +67,12 @@ window.CeterisPractice = function (C) {
         <div class="panel-body">${d.courses.map(c => `
           <div class="pc-course">${escapeHtml(c.title)}</div>
           ${c.chapters.map(ch => {
-            const s = chapterSummary(ch);
+            const s = chapterSummary(ch), labs = (ch.labs || []).length;
             return `<div class="pc-row">
               <div class="pc-row-main">
                 <div class="ess-title">Ch. ${ch.number} · ${escapeHtml(ch.title)}</div>
-                <div class="pc-meter" role="img" aria-label="${s.done} of ${s.n} exercises done"><span style="width:${pct(s.done, s.n)}%"></span></div>
-                <div class="ess-meta">${s.done} of ${s.n} exercise${s.n === 1 ? '' : 's'} done${s.avg != null ? ` · best scores average ${s.avg}` : ''}</div>
+                ${s.n ? `<div class="pc-meter" role="img" aria-label="${s.done} of ${s.n} exercises done"><span style="width:${pct(s.done, s.n)}%"></span></div>` : ''}
+                <div class="ess-meta">${s.n ? `${s.done} of ${s.n} exercise${s.n === 1 ? '' : 's'} done${s.avg != null ? ` · best scores average ${s.avg}` : ''}` : ''}${s.n && labs ? ' · ' : ''}${labs ? `${labs} graph lab${labs === 1 ? '' : 's'}` : ''}</div>
               </div>
               <button class="eb-btn pc-open" data-chapter="${escapeHtml(ch.id)}">${s.tried ? 'Open' : 'Start'}</button>
             </div>`;
@@ -94,6 +95,7 @@ window.CeterisPractice = function (C) {
 
   function openChapter(id) { state.practiceChapter = id; C.go('student-practice'); }
   function openExercise(id) { state.practiceEx = id; C.go('student-exercise'); }
+  function openLab(id) { state.practiceLab = id; C.go('student-lab'); }
 
   // ===================================================================================
   // Student: chapter page (the exercises, best scores, attempt history)
@@ -112,7 +114,9 @@ window.CeterisPractice = function (C) {
     if (!ch) { main.innerHTML = `<div class="essay-narrow"><div class="box"><p>Nothing to practice here right now.</p></div></div>`; return; }
     state.practiceChapter = ch.id;
     const s = chapterSummary(ch);
-    const cheer = !s.tried ? `${s.n} exercise${s.n === 1 ? '' : 's'}, each with fresh numbers every time you try. Take them in any order; your best score on each one is the one that counts.`
+    const labs = ch.labs || [];
+    const cheer = !s.n ? 'Explore the graphs below: drag the curves, try a tax or a price control, and watch what happens. Nothing here is scored.'
+      : !s.tried ? `${s.n} exercise${s.n === 1 ? '' : 's'}, each with fresh numbers every time you try. Take them in any order; your best score on each one is the one that counts.`
       : s.done === s.n ? `You’ve done every exercise in this chapter. Nice work! Each retake comes with new numbers, if you want to push a score higher.`
       : `Nice progress: ${s.done} of ${s.n} done. Keep going!`;
     main.innerHTML = `
@@ -137,8 +141,38 @@ window.CeterisPractice = function (C) {
             <button class="role-btn ${e.active || !e.attempts ? 'primary' : ''} pc-ex-go" data-ex="${escapeHtml(e.id)}">${e.active ? 'Continue' : e.attempts ? `${ICON_DICE} New numbers` : 'Start'}</button>
           </div>
         </li>`;
-      }).join('')}</ol>`;
+      }).join('')}</ol>
+      ${labs.length ? `<h2 class="pc-lab-head">Graph labs</h2><ul class="pc-exlist pc-labs">${labs.map(l => `<li class="pc-ex pc-lab">
+          <div class="pc-ex-num pc-lab-icon">${ICON_GRAPH}</div>
+          <div class="pc-ex-main"><h2>${escapeHtml(l.title)}</h2><p>${escapeHtml(l.summary)}</p><div class="pc-ex-status">Free to explore · not scored</div></div>
+          <div class="pc-ex-side"><button class="role-btn pc-ex-go" data-lab="${escapeHtml(l.id)}">Explore</button></div>
+        </li>`).join('')}</ul>` : ''}`;
     main.querySelectorAll('[data-ex]').forEach(b => { b.onclick = () => openExercise(b.dataset.ex); });
+    main.querySelectorAll('[data-lab]').forEach(b => { b.onclick = () => openLab(b.dataset.lab); });
+  }
+
+  // ===================================================================================
+  // Student: a graph lab (explore freely, nothing scored)
+
+  async function renderStudentLab() {
+    root.innerHTML = `${topbar('Back to the chapter')}<main class="pc-wrap pc-labview" id="pc-main"><div class="essay-loading">Loading…</div></main>`;
+    C.bindThemeSwitches();
+    document.getElementById('pc-back').onclick = () => C.go('student-practice');
+    const main = document.getElementById('pc-main');
+    let d;
+    try { d = await api(`/api/practice/lab/${encodeURIComponent(state.practiceLab)}/student`, { token: token() }); }
+    catch (e) { if (e.status === 401) return C.logoutStudent(); main.innerHTML = `<div class="essay-narrow"><div class="box"><p>${escapeHtml(e.message)}</p></div></div>`; return; }
+    if (state.view !== 'student-lab' || !main.isConnected) return;
+    state.practiceChapter = d.chapter.id;
+    main.innerHTML = `
+      <div class="pc-status"><div>
+        <div class="pc-crumb">Ch. ${d.chapter.number} · ${escapeHtml(d.chapter.title)} · Graph lab</div>
+        <div class="ew-title">${escapeHtml(d.lab.title)}</div>
+        <div class="pc-sub">${escapeHtml(d.lab.summary)} Nothing here is scored: experiment freely.</div>
+      </div></div>
+      ${d.lab.intro ? `<div class="pc-statement pc-lab-intro"><div class="md">${md(d.lab.intro)}</div></div>` : ''}
+      <div id="pc-labgraph"></div>`;
+    window.SDGraph.create(document.getElementById('pc-labgraph'), d.lab.graph, { caption: d.lab.title });
   }
 
   // ===================================================================================
@@ -169,7 +203,7 @@ window.CeterisPractice = function (C) {
     let att = d.attempt, history = d.history, best = d.best;
     const chat = (d.chat || []).slice();
     let justDone = null, busy = false, coachBusy = false, coachNote = null, coachUnread = false, finished = null;
-    const drafts = {};
+    const drafts = {}, graphs = {};
 
     main.innerHTML = `
       <div class="pc-status">
@@ -247,6 +281,7 @@ window.CeterisPractice = function (C) {
           }).join('')}</tr>`).join('')}
         </tbody></table></div>`;
       }
+      if (s.kind === 'graph') return `<div class="pc-graph" id="in-${s.id}" data-graph="${escapeHtml(s.id)}"></div>`;
       if (s.kind === 'explain') {
         if (done) return st.answer ? `<blockquote class="pc-yours">${escapeHtml(st.answer)}</blockquote>` : '';
         const v = drafts[s.id] != null ? drafts[s.id] : (st.answer || '');
@@ -274,6 +309,7 @@ window.CeterisPractice = function (C) {
           <div class="pc-step-body">
             ${s.kind === 'table' || s.kind === 'explain' ? inputHtml(s) : `<div class="pc-result">${st.status === 'shown' ? '<span class="pc-tag">Solution</span>' : ''}<span class="pc-yourans">${escapeHtml(s.solution)}</span>${creditTag(s)}</div>`}
             ${s.kind === 'table' || s.kind === 'explain' ? `<div class="pc-result">${creditTag(s)}</div>` : ''}
+            ${s.kind === 'graph' ? `<details class="pc-graph-done"${fresh ? ' open' : ''}><summary>Show the graph</summary>${inputHtml(s)}</details>` : ''}
             ${cheer}
             <details class="pc-why"${fresh ? ' open' : ''}><summary>${s.kind === 'explain' ? (st.status === 'solved' ? 'Compare with the model answer' : 'Model answer') : 'Why it works'}</summary>
               <div class="md">${md(s.worked || '')}</div></details>
@@ -357,6 +393,19 @@ window.CeterisPractice = function (C) {
           inp.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); submit(cur.id); } });
         });
       }
+      // Graph steps: an interactive graph for the current step (keeping what the student did),
+      // the recorded answer for finished ones.
+      probEl.querySelectorAll('[data-graph]').forEach(box => {
+        const s = steps().find(x => x.id === box.dataset.graph);
+        if (!s) return;
+        const done = isDone(s.state);
+        const g = window.SDGraph.create(box, s.graph, {
+          interactive: !done, caption: 'Graph for this step',
+          state: done ? s.solutionState : (drafts[s.id] || s.state.answer || undefined),
+          onChange: st => { drafts[s.id] = st; }
+        });
+        if (!done) graphs[s.id] = g;
+      });
       const again = document.getElementById('pc-again');
       if (again) again.onclick = () => fresh(true);
       const nx = document.getElementById('pc-nextex');
@@ -396,6 +445,7 @@ window.CeterisPractice = function (C) {
     }
 
     function gather(s) {
+      if (s.kind === 'graph') return { state: graphs[s.id] ? graphs[s.id].getState() : drafts[s.id] || null };
       const el = document.getElementById('in-' + s.id);
       if (s.kind === 'number') return { answer: el ? el.value : '' };
       if (s.kind === 'choice') { const vals = Array.from(el.querySelectorAll('input:checked')).map(i => i.value); return s.multi ? { choices: vals } : { choice: vals[0] || '' }; }
@@ -554,21 +604,27 @@ window.CeterisPractice = function (C) {
     const secs = d.sections;
     body.innerHTML = `
       <div class="dash-controls"><span class="dash-note">${flash ? escapeHtml(flash) : 'Step-by-step exercises, by course and chapter. Every attempt gets new numbers and a score out of 100; a student’s best score on each exercise is the one that counts.'}</span></div>
+      <div class="box pc-graphbox">
+        <div class="pc-setbox-icon">${ICON_GRAPH}</div>
+        <div class="pc-graphbox-text"><h2>Supply and demand graphs</h2>
+          <p class="dash-note">Make a graph students can drag: shifts, taxes, subsidies, price ceilings and floors. On its own it’s a free lab; add tasks and it becomes a scored exercise. It appears below, in the chapter you pick.</p></div>
+        <button class="role-btn primary" id="pc-newgraph">New graph</button>
+      </div>
       ${d.courses.map(c => `
         <div class="pc-course pc-course-head">${escapeHtml(c.title)}</div>
         ${c.chapters.map(ch => `
         <div class="box pc-setbox" data-chapterbox="${escapeHtml(ch.id)}">
           <div class="pc-setbox-head">
             <div class="pc-setbox-icon">${ICON_BOOK}</div>
-            <div class="pc-setbox-title"><h2>Chapter ${ch.number} · ${escapeHtml(ch.title)}</h2><div class="pc-sub">${escapeHtml(ch.subtitle || '')} · ${ch.exercises.length} exercises</div></div>
-            <div class="pc-setbox-actions"><button class="role-btn primary" data-progress="${escapeHtml(ch.id)}">Progress &amp; scores</button></div>
+            <div class="pc-setbox-title"><h2>Chapter ${ch.number} · ${escapeHtml(ch.title)}</h2><div class="pc-sub">${[ch.subtitle, (n => n ? `${n} exercise${n === 1 ? '' : 's'}` : '')(ch.exercises.filter(e => !e.lab).length), (n => n ? `${n} graph lab${n === 1 ? '' : 's'}` : '')(ch.exercises.filter(e => e.lab).length)].filter(Boolean).map(escapeHtml).join(' · ')}</div></div>
+            <div class="pc-setbox-actions">${ch.exercises.some(e => !e.lab) ? `<button class="role-btn primary" data-progress="${escapeHtml(ch.id)}">Progress &amp; scores</button>` : ''}</div>
           </div>
           ${secs.length ? `<div class="table-scroll"><table class="data-table pc-openmx">
             <thead><tr><th>Exercise</th>${secs.map(s => `<th class="pc-mx-sec"><div>${escapeHtml(s.name)}</div><div class="pc-mx-n">${s.students} student${s.students === 1 ? '' : 's'}</div>
               <button class="link-btn plain pc-mx-all" data-all="${s.id}" data-ch="${escapeHtml(ch.id)}">${ch.exercises.every(e => e.openIn.includes(s.id)) ? 'Close all' : 'Open all'}</button></th>`).join('')}</tr></thead>
             <tbody>${ch.exercises.map((e, i) => `<tr>
-              <td><div class="pc-mx-title">${i + 1}. ${escapeHtml(e.title)}</div><div class="pc-mx-sum">${escapeHtml(e.summary)} · ${e.steps} steps${e.started ? ` · ${e.started} started` : ''}</div>
-                <button class="link-btn plain" data-key="${escapeHtml(e.id)}">Answer key</button></td>
+              <td><div class="pc-mx-title">${e.lab ? `<span class="pc-tag">Graph lab</span> ` : `${i + 1}. `}${escapeHtml(e.title)}</div><div class="pc-mx-sum">${escapeHtml(e.summary)}${e.lab ? ' · not scored' : ` · ${e.steps} steps${e.started ? ` · ${e.started} started` : ''}`}</div>
+                ${e.lab ? '' : `<button class="link-btn plain" data-key="${escapeHtml(e.id)}">Answer key</button>`}${e.canEdit ? ` <button class="link-btn plain" data-editgraph="${e.graphId}">Edit graph</button>` : ''}</td>
               ${secs.map(s => `<td class="pc-mx-cell"><label class="pc-switch"><input type="checkbox" data-sec="${s.id}" data-ex="${escapeHtml(e.id)}"${e.openIn.includes(s.id) ? ' checked' : ''} aria-label="${escapeHtml(e.title)} open in ${escapeHtml(s.name)}"><span>${e.openIn.includes(s.id) ? 'Open' : 'Closed'}</span></label></td>`).join('')}
             </tr>`).join('')}</tbody></table></div>
             <div class="pc-assign-status" aria-live="polite"></div>`
@@ -576,6 +632,8 @@ window.CeterisPractice = function (C) {
         </div>`).join('')}`).join('')}`;
     body.querySelectorAll('[data-progress]').forEach(b => { b.onclick = () => { progSection = 'all'; renderProgress(b.dataset.progress); }; });
     body.querySelectorAll('[data-key]').forEach(b => { b.onclick = () => renderKey(b.dataset.key, 0); });
+    body.querySelectorAll('[data-editgraph]').forEach(b => { b.onclick = () => renderGraphEditor(+b.dataset.editgraph); });
+    document.getElementById('pc-newgraph').onclick = () => renderGraphEditor(null);
     const save = async (box, sectionId, ids, open) => {
       const status = box.querySelector('.pc-assign-status');
       status.textContent = 'Saving…';
@@ -718,5 +776,200 @@ window.CeterisPractice = function (C) {
     if (ws) ws.onclick = () => renderKey(exId, 0);
   }
 
-  return { loadStudentHome, renderStudentPractice, renderStudentExercise, renderInstructorPractice };
+  // ===================================================================================
+  // Instructor: the graph editor (curves, tools, what's shown, tasks recorded from the preview)
+
+  const GRAPH_DEFAULT = () => ({
+    title: '', summary: '', chapterNumber: '', chapterTitle: '',
+    config: {
+      demand: { a: 20, b: 0.2 }, supply: { c: 2, d: 0.1 }, step: 1,
+      axes: { q: 'Quantity', qUnit: '', p: 'Price ($)' },
+      tools: { shift: true, tax: true, subsidy: true, ceiling: true, floor: true },
+      show: { values: true, surplus: true, wedge: true, dwl: true, shortage: true },
+      randomize: false, intro: '', tasks: []
+    }
+  });
+  const TOOL_LABELS = { shift: 'Shift curves (market shocks)', tax: 'Taxes', subsidy: 'Subsidies', ceiling: 'Price ceilings', floor: 'Price floors' };
+  const SHOW_LABELS = { values: 'Numbers (equilibrium, prices, quantities, areas)', surplus: 'Consumer and producer surplus', wedge: 'Tax or subsidy wedge (buyers’ vs. sellers’ price)', dwl: 'Deadweight loss', shortage: 'Shortage or surplus under price controls' };
+
+  async function renderGraphEditor(id) {
+    const body = dashBody();
+    body.innerHTML = `<button class="link-btn plain back-link" id="ge-back">← Practice</button><div id="ge-wrap"><div class="empty-state">Loading…</div></div>`;
+    document.getElementById('ge-back').onclick = () => renderInstructorPractice();
+    let g;
+    if (id) {
+      try { g = (await iapi(`/api/practice/graphs/${id}`)).graph; }
+      catch (e) { document.getElementById('ge-wrap').innerHTML = `<div class="empty-state">${escapeHtml(e.message)}</div>`; return; }
+    } else g = GRAPH_DEFAULT();
+    const wrap = document.getElementById('ge-wrap');
+    if (!wrap) return;
+    const M = window.SDMath, money = window.SDGraph.money, qty = window.SDGraph.qty;
+    const cfg = JSON.parse(JSON.stringify(g.config));
+    let preview = null;
+
+    wrap.innerHTML = `
+      <div class="ge-grid">
+        <form class="ge-form" id="ge-form" novalidate>
+          <div class="box">
+            <h2>${id ? 'Edit graph' : 'New graph'}</h2>
+            <label class="ge-field"><span>Title</span><input id="ge-title" maxlength="120" placeholder="e.g., The market for gasoline" value="${escapeHtml(g.title)}"></label>
+            <label class="ge-field"><span>One-line description <em>(optional)</em></span><input id="ge-summary" maxlength="300" placeholder="e.g., Who really pays a gas tax?" value="${escapeHtml(g.summary || '')}"></label>
+            <div class="ge-row">
+              <label class="ge-field ge-narrow"><span>Chapter</span><input id="ge-chnum" type="number" min="1" max="60" placeholder="6" value="${escapeHtml(String(g.chapterNumber || ''))}"></label>
+              <label class="ge-field"><span>Chapter title <em>(if it’s a new chapter)</em></span><input id="ge-chtitle" maxlength="100" placeholder="e.g., Supply, demand, and government policies" value="${escapeHtml(g.chapterTitle || '')}"></label>
+            </div>
+          </div>
+          <div class="box">
+            <div class="ge-boxhead"><h2>Curves</h2><button type="button" class="role-btn" id="ge-random">${ICON_DICE} Pick at random</button></div>
+            <div class="ge-eq"><span class="ge-curve d">Demand</span> P = <input class="ge-num" data-k="demand.a" inputmode="decimal" aria-label="Demand intercept"> − <input class="ge-num" data-k="demand.b" inputmode="decimal" aria-label="Demand slope"> Q</div>
+            <div class="ge-eq"><span class="ge-curve s">Supply</span> P = <input class="ge-num" data-k="supply.c" inputmode="decimal" aria-label="Supply intercept"> + <input class="ge-num" data-k="supply.d" inputmode="decimal" aria-label="Supply slope"> Q</div>
+            <div class="ge-eq"><span class="ge-curve">Step</span> $ <input class="ge-num" data-k="step" inputmode="decimal" aria-label="Step"> <span class="ge-eqhint">how far curves and price lines move per step</span></div>
+            <p class="ge-note" id="ge-eqnote" aria-live="polite"></p>
+            <div class="ge-row">
+              <label class="ge-field"><span>Quantity axis</span><input data-k="axes.q" maxlength="40"></label>
+              <label class="ge-field"><span>Units <em>(optional)</em></span><input data-k="axes.qUnit" maxlength="40" placeholder="e.g., gallons, millions"></label>
+              <label class="ge-field"><span>Price axis</span><input data-k="axes.p" maxlength="40"></label>
+            </div>
+          </div>
+          <div class="box ge-checks">
+            <fieldset><legend>Students can use</legend>${Object.keys(TOOL_LABELS).map(k => `<label><input type="checkbox" data-tool="${k}"${cfg.tools[k] ? ' checked' : ''}> ${TOOL_LABELS[k]}</label>`).join('')}</fieldset>
+            <fieldset><legend>Show on the graph</legend>${Object.keys(SHOW_LABELS).map(k => `<label><input type="checkbox" data-show="${k}"${cfg.show[k] ? ' checked' : ''}> ${SHOW_LABELS[k]}</label>`).join('')}</fieldset>
+          </div>
+          <div class="box">
+            <label class="ge-field"><span>Introduction <em>(optional, shown above the graph)</em></span><textarea id="ge-intro" rows="3" maxlength="2000" placeholder="e.g., The graph shows the U.S. market for gasoline.">${escapeHtml(cfg.intro || '')}</textarea></label>
+          </div>
+          <div class="box">
+            <div class="ge-boxhead"><h2>Tasks</h2><button type="button" class="role-btn" id="ge-addtask">Add task</button></div>
+            <p class="dash-note">Without tasks, this graph is a free lab. With tasks, it’s a scored exercise: for each task, put the preview graph in the right state and click <strong>Record from the preview</strong>, then tick the numbers students should work out. Ceteris computes the answers.</p>
+            <ol class="ge-tasks" id="ge-tasks"></ol>
+            <label class="ge-random"><input type="checkbox" id="ge-randomize"${cfg.randomize ? ' checked' : ''}> New curves on every attempt</label>
+            <p class="ge-note">With new curves, write amounts in your questions as <code>{tax}</code>, <code>{subsidy}</code>, <code>{shift}</code> or <code>{price}</code>: they’re filled in for each version. Ceilings and floors keep the same distance from the equilibrium price.</p>
+          </div>
+          <div class="ge-actions">
+            <button type="submit" class="role-btn primary" id="ge-save">Save</button>
+            <button type="button" class="link-btn plain" id="ge-cancel">Cancel</button>
+            ${id && g.canEdit ? '<button type="button" class="link-btn plain ge-remove" id="ge-remove">Remove this graph</button>' : ''}
+            <span class="ge-status" id="ge-status" role="alert"></span>
+          </div>
+        </form>
+        <aside class="ge-preview"><div class="ge-preview-head"><h2>Preview</h2><span class="dash-note">This is what students see. Drag it to record a task’s answer.</span></div><div id="ge-graph"></div></aside>
+      </div>`;
+
+    const $ = sel => wrap.querySelector(sel);
+    const get = (o, k) => k.split('.').reduce((x, p) => (x ? x[p] : undefined), o);
+    const set = (o, k, v) => { const ks = k.split('.'); let x = o; ks.slice(0, -1).forEach(p => { x = x[p]; }); x[ks[ks.length - 1]] = v; };
+    wrap.querySelectorAll('[data-k]').forEach(inp => { inp.value = get(cfg, inp.dataset.k); });
+    const status = msg => { $('#ge-status').textContent = msg || ''; };
+
+    function readForm() {
+      wrap.querySelectorAll('[data-k]').forEach(inp => {
+        const k = inp.dataset.k, numeric = inp.classList.contains('ge-num');
+        set(cfg, k, numeric ? (inp.value.trim() === '' ? NaN : Number(inp.value)) : inp.value);
+      });
+      wrap.querySelectorAll('[data-tool]').forEach(cb => { cfg.tools[cb.dataset.tool] = cb.checked; });
+      wrap.querySelectorAll('[data-show]').forEach(cb => { cfg.show[cb.dataset.show] = cb.checked; });
+      cfg.intro = $('#ge-intro').value;
+      cfg.randomize = $('#ge-randomize').checked;
+    }
+    function drawPreview() {
+      readForm();
+      const err = M.validate(cfg) || (!Object.values(cfg.tools).some(Boolean) ? 'Allow at least one tool.' : null);
+      const box = $('#ge-graph');
+      if (err) { $('#ge-eqnote').textContent = err; $('#ge-eqnote').classList.add('bad'); box.innerHTML = `<div class="empty-state">${escapeHtml(err)}</div>`; preview = null; renderTasks(); return; }
+      const e = M.eq(cfg.demand.a, cfg.demand.b, cfg.supply.c, cfg.supply.d);
+      $('#ge-eqnote').classList.remove('bad');
+      $('#ge-eqnote').textContent = `Equilibrium: P = ${money(e.P)}, Q = ${qty(e.Q)}. A ${money(cfg.step)} shift moves the quantity by ${qty(cfg.step / (cfg.demand.b + cfg.supply.d))}.`;
+      const keep = preview ? preview.getState() : null;
+      preview = window.SDGraph.create(box, cfg, { caption: 'Preview', state: keep && cfg.tools[keep.mode] ? keep : undefined, onChange: () => renderTasks() });
+      renderTasks();
+    }
+    let t = null;
+    const later = () => { clearTimeout(t); t = setTimeout(drawPreview, 250); };
+    wrap.querySelectorAll('[data-k], [data-tool], [data-show]').forEach(inp => inp.addEventListener('input', later));
+    wrap.querySelectorAll('[data-tool], [data-show]').forEach(inp => inp.addEventListener('change', drawPreview));
+
+    $('#ge-random').onclick = () => {
+      const c = M.randomCurves(Math.random);
+      cfg.demand = c.demand; cfg.supply = c.supply;
+      ['demand.a', 'demand.b', 'supply.c', 'supply.d'].forEach(k => { wrap.querySelector(`[data-k="${k}"]`).value = get(cfg, k); });
+      drawPreview();
+    };
+
+    // ---- Tasks ----
+    function renderTasks() {
+      const list = $('#ge-tasks');
+      const sol = tk => (tk.target && cfg.demand && !M.validate(cfg) && M.legal(cfg, tk.target) ? M.solve(cfg, tk.target) : null);
+      list.innerHTML = cfg.tasks.map((tk, i) => {
+        const s = sol(tk), mode = tk.target && tk.target.mode;
+        const qs = mode ? M.questionsFor(mode) : [];
+        return `<li class="ge-task" data-i="${i}">
+          <label class="ge-field"><span>Task ${i + 1}: question for students</span><textarea rows="2" data-prompt="${i}" maxlength="1000" placeholder="e.g., The government levies a {tax} tax per gallon on sellers. Show its effect on the graph.">${escapeHtml(tk.prompt || '')}</textarea></label>
+          <div class="ge-answer">${mode ? `<span class="pc-tag">Answer</span> ${escapeHtml(M.describe(cfg, tk.target, money))}` : '<span class="dash-note">No answer recorded yet.</span>'}</div>
+          <div class="ge-task-actions">
+            <button type="button" class="role-btn" data-record="${i}">Record from the preview</button>
+            ${mode ? `<button type="button" class="link-btn plain" data-showtask="${i}">Show on the preview</button>` : ''}
+            <button type="button" class="link-btn plain" data-up="${i}"${i ? '' : ' disabled'}>Move up</button>
+            <button type="button" class="link-btn plain ge-remove" data-del="${i}">Remove</button>
+          </div>
+          ${mode === 'tax' || mode === 'subsidy' ? `<label class="ge-either"><input type="checkbox" data-either="${i}"${tk.either ? ' checked' : ''}> Accept a shift of either curve (the same ${mode} on buyers or on sellers)</label>` : ''}
+          ${mode ? `<fieldset class="ge-asks"><legend>Then ask students for</legend>${qs.map(k => {
+            const q = M.QUESTIONS[k], v = s ? q.get(s) : null;
+            return `<label><input type="checkbox" data-ask="${i}" value="${k}"${(tk.ask || []).includes(k) ? ' checked' : ''}> ${escapeHtml(q.label)}${v != null ? ` <span class="ge-val">(${q.money ? money(v) : qty(v)})</span>` : ''}</label>`;
+          }).join('')}</fieldset>` : ''}
+        </li>`;
+      }).join('') || '<li class="dash-note ge-empty">No tasks: students explore freely.</li>';
+      list.querySelectorAll('[data-prompt]').forEach(ta => { ta.oninput = () => { cfg.tasks[+ta.dataset.prompt].prompt = ta.value; }; });
+      list.querySelectorAll('[data-record]').forEach(b => {
+        b.onclick = () => {
+          if (!preview) return;
+          const st = preview.getState(), s = M.solve(cfg, st);
+          if (!st.dShift && !st.sShift && st.price == null) { status('First change the preview graph: move a curve or set a price line.'); return; }
+          if ((st.mode === 'tax' || st.mode === 'subsidy') && !(s.tax || s.subsidy)) { status(`Move a curve on the preview to show the ${st.mode} first.`); return; }
+          const tk = cfg.tasks[+b.dataset.record];
+          tk.target = st; tk.ask = (tk.ask || []).filter(k => M.questionsFor(st.mode).includes(k));
+          status(''); renderTasks();
+        };
+      });
+      list.querySelectorAll('[data-showtask]').forEach(b => { b.onclick = () => { if (preview) { preview.setState(cfg.tasks[+b.dataset.showtask].target); renderTasks(); } }; });
+      list.querySelectorAll('[data-up]').forEach(b => { b.onclick = () => { const i = +b.dataset.up; if (i) { [cfg.tasks[i - 1], cfg.tasks[i]] = [cfg.tasks[i], cfg.tasks[i - 1]]; renderTasks(); } }; });
+      list.querySelectorAll('[data-del]').forEach(b => {
+        b.onclick = () => {
+          if (!b.classList.contains('confirm')) { b.classList.add('confirm'); b.textContent = 'Remove it?'; return; }
+          cfg.tasks.splice(+b.dataset.del, 1); renderTasks();
+        };
+      });
+      list.querySelectorAll('[data-either]').forEach(cb => { cb.onchange = () => { cfg.tasks[+cb.dataset.either].either = cb.checked; }; });
+      list.querySelectorAll('[data-ask]').forEach(cb => {
+        cb.onchange = () => {
+          const tk = cfg.tasks[+cb.dataset.ask];
+          tk.ask = Array.from(list.querySelectorAll(`[data-ask="${cb.dataset.ask}"]:checked`)).map(x => x.value);
+        };
+      });
+    }
+    $('#ge-addtask').onclick = () => { cfg.tasks.push({ prompt: '', target: null, ask: [], either: false }); renderTasks(); const tas = wrap.querySelectorAll('[data-prompt]'); if (tas.length) tas[tas.length - 1].focus(); };
+
+    // ---- Save, cancel, remove ----
+    $('#ge-cancel').onclick = () => renderInstructorPractice();
+    $('#ge-form').onsubmit = async e => {
+      e.preventDefault();
+      readForm();
+      const payload = { title: $('#ge-title').value, summary: $('#ge-summary').value, chapterNumber: $('#ge-chnum').value, chapterTitle: $('#ge-chtitle').value, config: cfg };
+      const btn = $('#ge-save');
+      btn.disabled = true; status('Saving…');
+      try {
+        const r = await iapi(id ? `/api/practice/graphs/${id}` : '/api/practice/graphs', { method: id ? 'PUT' : 'POST', body: payload });
+        renderInstructorPractice(`Saved “${r.graph.title}” (${r.graph.kind === 'lab' ? 'a graph lab' : 'a scored exercise'}) in Chapter ${r.graph.chapterNumber}. Open it for your sections below.`);
+      } catch (err) { btn.disabled = false; status(err.message); }
+    };
+    const rm = $('#ge-remove');
+    if (rm) rm.onclick = async () => {
+      if (!rm.classList.contains('confirm')) { rm.classList.add('confirm'); rm.textContent = 'Remove it? Students’ past scores are kept.'; return; }
+      try { await iapi(`/api/practice/graphs/${id}`, { method: 'DELETE' }); renderInstructorPractice(`Removed “${g.title}”.`); }
+      catch (err) { status(err.message); }
+    };
+
+    drawPreview();
+  }
+
+  return { loadStudentHome, renderStudentPractice, renderStudentExercise, renderStudentLab, renderInstructorPractice };
 };

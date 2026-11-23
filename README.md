@@ -161,6 +161,25 @@ Known wrong answers get a specific message; **Hint** reveals hints one at a time
 
 **Adding exercises**: a chapter is a list of exercise generators plus its vocabulary, listed in `practice-catalog.js` (the format is described at the top of that file; Chapter 16 lives in its own file, `practice-ch16.js`, which is the pattern for new chapters). The server builds every exercise from a few hundred random seeds when it starts, so a broken generator stops it there rather than in front of a student. The demo student can **Erase my history** on any exercise.
 
+## Supply and demand graphs
+A reusable graph engine for supply and demand problems: a linear demand curve (P = a − bQ) and supply curve (P = c + dQ) that students change by dragging.
+
+**What students can do** (each tool can be switched off per graph):
+- **Shift curves**: drag demand or supply up or down to show a market shock.
+- **Tax** or **Subsidy**: drag supply (on sellers) or demand (on buyers) by the size of the tax or subsidy. The graph shows the wedge: what buyers pay, what sellers keep, the tax revenue or subsidy cost.
+- **Price ceiling** or **Price floor**: drag a horizontal price line. The graph shows the quantities demanded and supplied, and the shortage or surplus when the control binds.
+
+Curves and price lines snap to a step you choose ($1 by default). The original curves stay on the graph, dashed (D₀, S₀). A panel beside the graph shows the numbers before and after: price, quantity, buyers' and sellers' prices, consumer and producer surplus, revenue or cost, deadweight loss. You decide which of these the graph shows (numbers, surplus, wedge, deadweight loss, shortage/surplus). Handles also work from the keyboard (arrow keys, Page Up/Down, Home to reset), and on phones.
+
+**Making a graph** (instructor dashboard → **Practice** → **New graph**): title, chapter, the two curves (type the intercepts and slopes, or **Pick at random** for curves with whole-number equilibria), the step, the axis labels and units, the tools, and what to show. A live preview shows exactly what students will see, with the equilibrium written under the curves.
+- **Without tasks**, the graph is a **graph lab**: a free, unscored sandbox listed under its chapter.
+- **With tasks**, it's a **scored exercise** like the others. For each task, write the question, put the preview in the right state (say, a $3 tax on sellers) and click **Record from the preview**. Then tick the numbers students should work out next (buyers' price, tax revenue, deadweight loss…); Ceteris computes the answers and shows them beside each box. For a tax or subsidy you can accept a shift of either curve.
+- **New curves on every attempt** draws fresh curves for each attempt, like the other exercises. Write amounts in the question as `{tax}`, `{subsidy}`, `{shift}` or `{price}` so they're filled in; ceilings and floors keep the same distance from the equilibrium.
+
+Graphs live in the database (table `practice_graphs`), so no code change is needed. A new chapter number creates the chapter. Open them for sections with the same switches as other exercises. Students' graph answers are checked in code: a wrong attempt gets a specific message (wrong tool, wrong curve, wrong side of the market, wrong size or direction). Each wrong try on a graph step takes off 20%, like a number. **Edit graph** changes a graph you made (changing its curves or tasks ends attempts in progress); **Remove this graph** hides it and keeps students' past scores.
+
+The engine is two files usable anywhere in the app: `public/sd-math.js` (the economics, shared by the browser and the server) and `public/sd-graph.js` (the drawing and dragging, `SDGraph.create(element, config)`).
+
 ## Student privacy: summaries by default
 Each student decides what you see, with a switch in their chat's side panel: **Share full conversations with [you]**. It is **off by default**.
 - **Off (default):** you see Ceteris's summary of each conversation (topics, mastery read, flagged misconceptions, follow-up suggestion), but none of the student's own words. Their threads are titled by topic and marked "Summary only". The summarizer is instructed to paraphrase, never quote.

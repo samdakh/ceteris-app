@@ -1,0 +1,66 @@
+/* Ceteris supply and demand graph (sd-graph.js). Demand and supply colours were checked for
+   colour-blind separation and contrast in both themes; curves also carry D and S labels. */
+:root { --sd-d: #2A6FB0; --sd-s: #C77700; --sd-cs: rgba(42, 111, 176, .16); --sd-ps: rgba(199, 119, 0, .17); --sd-rev: rgba(17, 46, 81, .16); }
+html[data-theme="dark"] { --sd-d: #4C8FD9; --sd-s: #C8810F; --sd-cs: rgba(76, 143, 217, .22); --sd-ps: rgba(200, 129, 15, .22); --sd-rev: rgba(244, 245, 247, .14); }
+
+.sdg { display: block; }
+.sdg-modes { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 8px; }
+.sdg-modes button { font-family: var(--font-body); font-size: 13.5px; padding: 6px 12px; border-radius: 999px; border: 1.5px solid var(--line); background: var(--card); color: var(--ink); cursor: pointer; }
+.sdg-modes button:hover { border-color: var(--gold); }
+.sdg-modes button.on { background: var(--solid); color: #fff; border-color: var(--solid); box-shadow: inset 0 -2px 0 var(--gold); }
+html[data-theme="dark"] .sdg-modes button.on { border-color: var(--gold); }
+.sdg-bar { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; margin-bottom: 6px; }
+.sdg-hint { font-size: 13px; color: var(--ink-soft); }
+.sdg-reset { font-family: var(--font-mono); font-size: 12px; background: none; border: none; color: var(--ink); text-decoration: underline; text-decoration-color: var(--gold); text-underline-offset: 3px; cursor: pointer; white-space: nowrap; }
+.sdg-body { display: grid; grid-template-columns: minmax(0, 1fr) 230px; gap: 16px; align-items: start; }
+.sdg-body.no-readouts { grid-template-columns: minmax(0, 1fr); }
+.sdg-fig { margin: 0; background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 6px; }
+.sdg-svg { display: block; width: 100%; height: auto; touch-action: none; user-select: none; -webkit-user-select: none; }
+@media (max-width: 760px) { .sdg-body { grid-template-columns: minmax(0, 1fr); } }
+
+.sdg-grid { stroke: var(--line); stroke-width: 1; opacity: .55; }
+.sdg-axis { stroke: var(--ink-soft); stroke-width: 1.5; }
+.sdg-tick { font-family: var(--font-mono); font-size: 11px; fill: var(--ink-soft); }
+.sdg-axis-title { font-family: var(--font-body); font-size: 12.5px; fill: var(--ink); }
+.sdg-curve { stroke-width: 2.5; stroke-linecap: round; }
+.sdg-d { stroke: var(--sd-d); }
+.sdg-s { stroke: var(--sd-s); }
+.sdg-old { stroke-width: 2; stroke-dasharray: 6 5; opacity: .75; }
+.sdg-curve-label { font-family: var(--font-body); font-size: 14px; font-weight: 600; fill: var(--ink); }
+.sdg-old-label { font-weight: 400; fill: var(--ink-soft); }
+.sdg-hitline { stroke: transparent; stroke-width: 22; cursor: ns-resize; }
+.sdg-cs { fill: var(--sd-cs); }
+.sdg-ps { fill: var(--sd-ps); }
+.sdg-rev { fill: var(--sd-rev); stroke: var(--ink-soft); stroke-width: 1; }
+.sdg-cost { fill: none; stroke: var(--ink); stroke-width: 1.5; stroke-dasharray: 5 4; }
+.sdg-dwl { stroke: var(--ink); stroke-width: 1.2; }
+.sdg-hatch-line { stroke: var(--ink); stroke-width: 1.4; opacity: .55; }
+.sdg-area-label { font-family: var(--font-mono); font-size: 11.5px; fill: var(--ink); font-weight: 500; pointer-events: none; }
+.sdg-guide { stroke: var(--ink-soft); stroke-width: 1; stroke-dasharray: 3 3; }
+.sdg-guide-label { font-family: var(--font-mono); font-size: 11px; fill: var(--ink); paint-order: stroke; stroke: var(--card); stroke-width: 3px; stroke-linejoin: round; }
+.sdg-pt { fill: var(--ink); stroke: var(--card); stroke-width: 2; }
+.sdg-pt0 { fill: var(--card); stroke: var(--ink-soft); stroke-width: 1.5; }
+.sdg-price { stroke: var(--ink); stroke-width: 2; stroke-dasharray: 8 4; }
+.sdg-price.binding { stroke-dasharray: none; }
+.sdg-price-label, .sdg-gap-label { font-family: var(--font-mono); font-size: 11.5px; fill: var(--ink); font-weight: 500; paint-order: stroke; stroke: var(--card); stroke-width: 3px; stroke-linejoin: round; }
+.sdg-gap { stroke: var(--ink); stroke-width: 1.2; }
+.sdg-handle { cursor: ns-resize; outline: none; }
+.sdg-handle circle { fill: var(--card); stroke: var(--ink); stroke-width: 1.8; }
+.sdg-handle path { fill: var(--ink); }
+.sdg-handle:hover circle, .sdg-handle:focus-visible circle { stroke: var(--gold); stroke-width: 3; }
+.sdg-handle:focus-visible circle { fill: var(--accent-bg); }
+.sdg.dragging .sdg-handle circle { stroke: var(--gold); }
+
+.sdg-read { font-size: 13.5px; background: var(--surface-2); border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; }
+.sdg-read dl { margin: 0; }
+.sdg-read dl > div { display: flex; justify-content: space-between; gap: 10px; padding: 4px 0; border-bottom: 1px solid var(--line); }
+.sdg-read dl > div:last-child { border-bottom: none; }
+.sdg-read dt { color: var(--ink-soft); }
+.sdg-read dd { margin: 0; font-family: var(--font-mono); font-weight: 500; text-align: right; white-space: nowrap; }
+.sdg-legend { display: flex; flex-wrap: wrap; gap: 4px 12px; margin-top: 10px; font-size: 12px; color: var(--ink-soft); }
+.sdg-legend .sw { display: inline-block; width: 14px; height: 10px; margin-right: 5px; vertical-align: -1px; border-radius: 2px; }
+.sdg-legend .sw.d { height: 3px; background: var(--sd-d); vertical-align: 3px; }
+.sdg-legend .sw.s { height: 3px; background: var(--sd-s); vertical-align: 3px; }
+.sdg-legend .sw.cs { background: var(--sd-cs); border: 1px solid var(--sd-d); }
+.sdg-legend .sw.ps { background: var(--sd-ps); border: 1px solid var(--sd-s); }
+.sdg-legend .sw.dwl { background: repeating-linear-gradient(45deg, var(--ink) 0 1.5px, transparent 1.5px 5px); border: 1px solid var(--ink); }

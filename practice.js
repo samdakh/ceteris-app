@@ -7,6 +7,8 @@
    an answer, hint, common-mistake message or worked solution before they have earned it. */
 
 const { COURSES } = require('./practice-catalog');
+const GR = require('./practice-graphs');
+const SD = require('./public/sd-math.js');
 
 const MAX_ASK = 40;           // questions to the coach per attempt
 const MAX_EXPLAIN_TRIES = 8;  // reviewed explanations per step
@@ -15,15 +17,38 @@ const LOG_LIMIT = 20;         // answers kept per step for the instructor
 // Scoring: a step is worth `weight` points (1 by default, 2 for tables). Solved on the first
 // try without hints: full credit. Each wrong try or hint takes a little off, never below half.
 // Showing the solution, or leaving the step unfinished: no credit.
-const PENALTY = { number: 0.2, choice: 0.2, table: 0.1, explain: 0.1 };
+const PENALTY = { number: 0.2, choice: 0.2, table: 0.1, explain: 0.1, graph: 0.2 };
 const HINT_PENALTY = 0.1, FLOOR = 0.5;
 
 // ---- Catalog ---------------------------------------------------------------------------
 
-const EX = new Map(), CHAPTERS = new Map();
-for (const course of COURSES) for (const ch of course.chapters) {
-  CHAPTERS.set(ch.id, { course, chapter: ch });
-  ch.exercises.forEach((ex, i) => EX.set(ex.id, { ex, course, chapter: ch, index: i }));
+// The catalog is the code chapters plus the graphs made in the editor (see practice-graphs.js):
+// a graph with tasks is an exercise in its chapter, a graph without tasks is a lab.
+const EX = new Map(), CHAPTERS = new Map(), LABS = new Map();
+let CAT = COURSES, customRows = [];
+const labOf = row => ({ id: 'g' + row.id, graphId: row.id, lab: true, title: row.title, summary: row.summary || 'Explore supply and demand on an interactive graph.', intro: row.config.intro || '',
+  graph: { demand: row.config.demand, supply: row.config.supply, step: row.config.step, axes: row.config.axes, tools: row.config.tools, show: row.config.show } });
+function rebuildCatalog() {
+  EX.clear(); CHAPTERS.clear(); LABS.clear(); cache.clear();
+  CAT = COURSES.map(course => {
+    const chapters = course.chapters.map(ch => Object.assign({}, ch, { exercises: ch.exercises.slice(), labs: [] }));
+    if (course.id === 'micro') for (const row of customRows) {
+      let ch = chapters.find(c => c.number === row.chapter_number);
+      if (!ch) {
+        ch = { id: 'c' + row.chapter_number, number: row.chapter_number, title: row.chapter_title || `Chapter ${row.chapter_number}`, subtitle: '', vocab: GR.SD_VOCAB, exercises: [], labs: [] };
+        chapters.push(ch);
+      }
+      if (row.config.tasks.length) ch.exercises.push(GR.graphExercise(row));
+      else ch.labs.push(labOf(row));
+    }
+    chapters.sort((x, y) => x.number - y.number);
+    return Object.assign({}, course, { chapters });
+  });
+  for (const course of CAT) for (const ch of course.chapters) {
+    CHAPTERS.set(ch.id, { course, chapter: ch });
+    ch.exercises.forEach((ex, i) => EX.set(ex.id, { ex, course, chapter: ch, index: i }));
+    ch.labs.forEach(l => LABS.set(l.id, { lab: l, course, chapter: ch }));
+  }
 }
 
 // A small seeded generator (mulberry32), so a seed always rebuilds the same version.
@@ -45,6 +70,7 @@ const stepTol = s => (s.answer && s.answer.tol != null ? s.answer.tol : 0.01);
 
 // Seed 0 is the worksheet's own numbers (answer key, tests); any other seed draws new ones.
 const cache = new Map();
+rebuildCatalog();
 function instance(exId, seed) {
   const key = exId + ':' + seed;
   if (cache.has(key)) return cache.get(key);
@@ -77,7 +103,8 @@ const isMulti = s => s.kind === 'choice' && Array.isArray(s.answer);
 
 function validateStep(s, where) {
   if (!s.key || !s.prompt) throw new Error(`step without key/prompt: ${where}`);
-  if (!['number', 'choice', 'table', 'explain'].includes(s.kind)) throw new Error(`unknown kind: ${where}`);
+  if (!['number', 'choice', 'table', 'explain', 'graph'].includes(s.kind)) throw new Error(`unknown kind: ${where}`);
+  if (s.kind === 'graph' && !(s.graph && s.target && SD.legal(s.graph, s.target))) throw new Error(`graph step without a legal target: ${where}`);
   if (s.kind === 'number' && !(s.answer && Number.isFinite(s.answer.value))) throw new Error(`no answer: ${where}`);
   if (s.kind === 'choice') {
     const ids = (s.options || []).map(o => o.id);
@@ -125,6 +152,7 @@ function fmtAnswer(step) {
   }
   if (step.kind === 'choice') return [].concat(step.answer).map(id => step.options.find(o => o.id === id).label).join(', ');
   if (step.kind === 'explain') return step.model;
+  if (step.kind === 'graph') return SD.describe(step.graph, step.target, fmtMoney);
   return null;
 }
 // The key's values for a table, with any display rounding (e.g. ATC $73.33 shown as 73).
@@ -217,6 +245,16 @@ function checkTable(step, body) {
   return { correct: false, cells, answer: saved, message: (notes.length ? notes.slice(0, 2).join(' ') + ' ' : lead) + (counts ? counts.charAt(0).toUpperCase() + counts.slice(1) + '.' : ''), partial: !wrong };
 }
 
+// A graph step: the student's graph must match the recorded answer (after snapping).
+function checkGraph(step, body) {
+  const g = body.state && typeof body.state === 'object' ? body.state : {};
+  const st = { mode: String(g.mode || ''), dShift: Number(g.dShift) || 0, sShift: Number(g.sShift) || 0, price: g.price == null || g.price === '' ? null : Number(g.price) };
+  if (!GR.TOOL_KEYS.includes(st.mode) || ![st.dShift, st.sShift].every(Number.isFinite) || (st.price != null && !Number.isFinite(st.price))) return { invalid: true, message: 'Use the graph to show your answer.' };
+  if (!st.dShift && !st.sShift && st.price == null) return { invalid: true, message: 'Move a curve (or set the price line) to show your answer, then check.' };
+  if (SD.sameState(step.graph, st, step.target, { eitherCurve: step.either })) return { correct: true, answer: st };
+  return { correct: false, message: GR.feedbackFor(step.graph, st, step.target, step.either), answer: st };
+}
+
 // A few words when a step is solved, depending on how it went.
 function praiseFor(st) {
   if (st.status === 'shown') return pickOne(['No worries: that’s what the solution is for. Read through why it works, then keep going.', 'That’s fine. Take a minute with the explanation below; it’ll stick better next time.']);
@@ -249,6 +287,7 @@ function stepForStudent(s, st, locked) {
   const out = { id: s.key, kind: s.kind, prompt: s.prompt, locked: !!locked, weight: s.weight };
   if (s.kind === 'number') out.unit = s.answer.unit || '';
   if (s.kind === 'choice') { out.options = s.options.map(o => ({ id: o.id, label: o.label })); out.multi = isMulti(s); }
+  if (s.kind === 'graph') out.graph = s.graph;
   if (s.kind === 'table') {
     out.columns = s.columns.map(c => ({ key: c.key, label: c.label, given: !!c.given }));
     out.rows = s.rows.map(r => ({ values: r.values, fill: s.columns.filter(c => !c.given && r.answers[c.key] != null).map(c => c.key) }));
@@ -265,6 +304,7 @@ function stepForStudent(s, st, locked) {
     out.worked = s.kind === 'explain' ? s.model : s.worked;
     out.solution = s.kind === 'table' ? tableKey(s) : fmtAnswer(s);
     if (s.kind === 'choice') out.correct = s.answer;
+    if (s.kind === 'graph') out.solutionState = s.target;
   }
   return out;
 }
@@ -302,7 +342,7 @@ function stepKeyText(s) {
 }
 
 // The chapter's own vocabulary and rules of thumb (set in the catalog), for the coach and the reviewer.
-const vocabFor = ex => `Use the instructor's vocabulary and reasoning:\n${EX.get(ex.id).chapter.vocab || ''}`;
+const vocabFor = ex => `Use the instructor's vocabulary and reasoning:\n${ex.vocab || EX.get(ex.id).chapter.vocab || ''}`;
 
 const TONE = `Tone: warm, encouraging and plain-spoken, like a friendly professor in office hours. Notice what the student got right before you nudge. Contractions are fine; a light touch of dry humor is fine. Never sarcastic, never condescending, and no gushing or empty praise.`;
 
@@ -433,6 +473,18 @@ module.exports = function registerPractice(app, deps) {
         UNIQUE (exercise_id, student_id, number)
       );
       CREATE UNIQUE INDEX IF NOT EXISTS practice_attempts_one_active ON practice_attempts (exercise_id, student_id) WHERE status = 'active';
+      CREATE TABLE IF NOT EXISTS practice_graphs (
+        id SERIAL PRIMARY KEY,
+        owner_id INT,
+        chapter_number INT NOT NULL,
+        chapter_title TEXT NOT NULL DEFAULT '',
+        title TEXT NOT NULL,
+        summary TEXT NOT NULL DEFAULT '',
+        config JSONB NOT NULL,
+        archived BOOLEAN NOT NULL DEFAULT false,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+        updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+      );
       CREATE INDEX IF NOT EXISTS practice_attempts_student ON practice_attempts (student_id);
     `);
     // The first version opened the whole Chapter 15 worksheet as one set; open its exercises instead.
@@ -446,6 +498,12 @@ module.exports = function registerPractice(app, deps) {
                           WHERE ps.set_id = 'ch15-competitive-firms' ON CONFLICT DO NOTHING`, [ids]);
       }
     }
+    await loadGraphs();
+  }
+
+  async function loadGraphs() {
+    customRows = (await pool.query(`SELECT * FROM practice_graphs WHERE NOT archived ORDER BY chapter_number, id`)).rows;
+    rebuildCatalog();
   }
 
   const fail = (res, where) => e => {
@@ -455,7 +513,7 @@ module.exports = function registerPractice(app, deps) {
 
   async function openFor(studentId) {
     const r = await pool.query(`SELECT DISTINCT po.exercise_id FROM practice_open po JOIN section_students ss ON ss.section_id = po.section_id WHERE ss.student_id=$1`, [studentId]);
-    return new Set(r.rows.map(x => x.exercise_id).filter(id => EX.has(id)));
+    return new Set(r.rows.map(x => x.exercise_id).filter(id => EX.has(id) || LABS.has(id)));
   }
   async function isOpen(exId, studentId) {
     const r = await pool.query(`SELECT 1 FROM practice_open po JOIN section_students ss ON ss.section_id = po.section_id WHERE po.exercise_id=$1 AND ss.student_id=$2 LIMIT 1`, [exId, studentId]);
@@ -525,10 +583,11 @@ module.exports = function registerPractice(app, deps) {
     try {
       const open = await openFor(req.student.id);
       const rows = open.size ? (await pool.query(`SELECT exercise_id, number, status, score, steps, seed FROM practice_attempts WHERE student_id=$1 AND exercise_id = ANY($2)`, [req.student.id, [...open]])).rows : [];
-      const courses = COURSES.map(course => ({
+      const courses = CAT.map(course => ({
         id: course.id, title: course.title,
         chapters: course.chapters.map(ch => ({
           id: ch.id, number: ch.number, title: ch.title, subtitle: ch.subtitle,
+          labs: ch.labs.filter(l => open.has(l.id)).map(l => ({ id: l.id, title: l.title, summary: l.summary })),
           exercises: ch.exercises.filter(e => open.has(e.id)).map(e => {
             const mine = rows.filter(r => r.exercise_id === e.id);
             const act = mine.find(r => r.status === 'active');
@@ -538,10 +597,20 @@ module.exports = function registerPractice(app, deps) {
               active: act ? { number: act.number, ...scoreOf(instance(e.id, act.seed), act.steps || {}) } : null
             };
           })
-        })).filter(ch => ch.exercises.length)
+        })).filter(ch => ch.exercises.length || ch.labs.length)
       })).filter(c => c.chapters.length);
       res.json({ courses, isDemo: isDemo(req.student.id) });
     } catch (e) { fail(res, 'practice list')(e); }
+  });
+
+  // A graph lab: the graph to explore, nothing scored.
+  app.get('/api/practice/lab/:id/student', requireStudent, async (req, res) => {
+    try {
+      const L = LABS.get(req.params.id);
+      if (!L || !(await isOpen(L.lab.id, req.student.id))) return res.status(404).json({ error: 'This graph lab isn’t open for you.' });
+      res.json({ lab: { id: L.lab.id, title: L.lab.title, summary: L.lab.summary, intro: L.lab.intro, graph: L.lab.graph },
+                 chapter: { id: L.chapter.id, number: L.chapter.number, title: L.chapter.title } });
+    } catch (e) { fail(res, 'practice lab')(e); }
   });
 
   app.get('/api/practice/ex/:exId/student', requireStudent, async (req, res) => {
@@ -579,7 +648,7 @@ module.exports = function registerPractice(app, deps) {
       const already = st.status === 'solved' || st.status === 'shown';
       const body = req.body || {};
       const r = s.kind === 'number' ? checkNumber(s, String(body.answer == null ? '' : body.answer).slice(0, 40), st.attempts + 1)
-        : s.kind === 'choice' ? checkChoice(s, body) : checkTable(s, body);
+        : s.kind === 'choice' ? checkChoice(s, body) : s.kind === 'graph' ? checkGraph(s, body) : checkTable(s, body);
       if (r.invalid) return res.json({ correct: false, invalid: true, message: r.message });
       if (already) return res.json({ correct: !!r.correct, step: stepForStudent(s, st, false) });
       const answer = s.kind === 'number' ? String(body.answer).slice(0, 40) : r.answer;
@@ -718,14 +787,20 @@ module.exports = function registerPractice(app, deps) {
                                          GROUP BY a.exercise_id`, [req.instructor.id])).rows;
       res.json({
         sections: secs,
-        courses: COURSES.map(c => ({
+        courses: CAT.map(c => ({
           id: c.id, title: c.title,
           chapters: c.chapters.map(ch => ({
             id: ch.id, number: ch.number, title: ch.title, subtitle: ch.subtitle,
             exercises: ch.exercises.map(e => ({
               id: e.id, title: e.title, summary: e.summary, steps: instance(e.id, 0).steps.length,
+              graphId: e.graphId || null, canEdit: !!e.graphId && (e.ownerId === req.instructor.id || req.instructor.isAdmin),
               openIn: open.filter(o => o.exercise_id === e.id).map(o => o.section_id),
               started: (started.find(s => s.exercise_id === e.id) || {}).n || 0
+            })).concat(ch.labs.map(l => {
+              const row = customRows.find(r => r.id === l.graphId);
+              return { id: l.id, title: l.title, summary: l.summary, lab: true, graphId: l.graphId,
+                       canEdit: !!row && (row.owner_id === req.instructor.id || req.instructor.isAdmin),
+                       openIn: open.filter(o => o.exercise_id === l.id).map(o => o.section_id), started: 0 };
             }))
           }))
         }))
@@ -740,7 +815,7 @@ module.exports = function registerPractice(app, deps) {
       const secs = await mySections(req.instructor.id);
       const sec = secs.find(s => s.id === Number(b.sectionId));
       if (!sec) return res.status(404).json({ error: 'Section not found.' });
-      const ids = (Array.isArray(b.exerciseIds) ? b.exerciseIds : []).map(String).filter(id => EX.has(id));
+      const ids = (Array.isArray(b.exerciseIds) ? b.exerciseIds : []).map(String).filter(id => EX.has(id) || LABS.has(id));
       if (!ids.length) return res.status(400).json({ error: 'No exercises given.' });
       if (b.open) await pool.query(`INSERT INTO practice_open (section_id, exercise_id, opened_by) SELECT $1, e, $3 FROM unnest($2::text[]) e ON CONFLICT DO NOTHING`, [sec.id, ids, req.instructor.id]);
       else await pool.query(`DELETE FROM practice_open WHERE section_id=$1 AND exercise_id = ANY($2)`, [sec.id, ids]);
@@ -873,5 +948,79 @@ module.exports = function registerPractice(app, deps) {
     } catch (e) { fail(res, 'practice student work')(e); }
   });
 
-  return { init, _test: { copiedShare, visibleText, parseNum, checkNumber, checkChoice, checkTable, instance, scoreOf, stepCredit, explainSystem, askSystem, parseVerdict, tableKey, fmtAnswer, COURSES, EX, rng } };
+  // ---- Graph editor (instructors) ----
+
+  const graphOut = (row, me) => ({
+    id: row.id, title: row.title, summary: row.summary, chapterNumber: row.chapter_number, chapterTitle: row.chapter_title,
+    config: row.config, exerciseId: 'g' + row.id, kind: row.config.tasks.length ? 'exercise' : 'lab',
+    canEdit: row.owner_id === me.id || me.isAdmin, updatedAt: row.updated_at
+  });
+  // Build the graph's versions now, so a problem shows up in the editor, not in front of a student.
+  function checkBuild(graph) {
+    const ex = GR.graphExercise({ id: 0, owner_id: 0, title: graph.title, summary: graph.summary, config: graph.config });
+    const seeds = [null].concat(graph.config.randomize && graph.config.tasks.length ? Array.from({ length: 60 }, (_, i) => i + 1) : []);
+    for (const seed of seeds) {
+      const built = ex.build(seed == null ? ex.worksheet : ex.generate(rng(seed * 7919)));
+      built.steps.forEach(st => { st.weight = st.weight || 1; validateStep(st, `graph step ${st.key}`); });
+    }
+  }
+
+  app.get('/api/practice/graphs', requireInstructor, async (req, res) => {
+    try {
+      const rows = (await pool.query(`SELECT * FROM practice_graphs WHERE NOT archived ORDER BY chapter_number, id`)).rows;
+      res.json({ graphs: rows.map(r => graphOut(r, req.instructor)) });
+    } catch (e) { fail(res, 'graph list')(e); }
+  });
+  app.get('/api/practice/graphs/:id', requireInstructor, async (req, res) => {
+    try {
+      const r = (await pool.query(`SELECT * FROM practice_graphs WHERE id=$1 AND NOT archived`, [Number(req.params.id) || 0])).rows[0];
+      if (!r) return res.status(404).json({ error: 'Graph not found.' });
+      res.json({ graph: graphOut(r, req.instructor) });
+    } catch (e) { fail(res, 'graph fetch')(e); }
+  });
+  app.post('/api/practice/graphs', requireInstructor, async (req, res) => {
+    try {
+      const { graph, error } = GR.cleanGraph(req.body);
+      if (error) return res.status(400).json({ error });
+      try { checkBuild(graph); } catch (err) { return res.status(400).json({ error: 'This graph can’t be built: ' + err.message }); }
+      const r = await pool.query(`INSERT INTO practice_graphs (owner_id, chapter_number, chapter_title, title, summary, config) VALUES ($1,$2,$3,$4,$5,$6) RETURNING *`,
+        [req.instructor.id, graph.chapterNumber, graph.chapterTitle, graph.title, graph.summary, JSON.stringify(graph.config)]);
+      await loadGraphs();
+      res.json({ graph: graphOut(r.rows[0], req.instructor) });
+    } catch (e) { fail(res, 'graph create')(e); }
+  });
+  app.put('/api/practice/graphs/:id', requireInstructor, async (req, res) => {
+    try {
+      const cur = (await pool.query(`SELECT * FROM practice_graphs WHERE id=$1 AND NOT archived`, [Number(req.params.id) || 0])).rows[0];
+      if (!cur) return res.status(404).json({ error: 'Graph not found.' });
+      if (cur.owner_id !== req.instructor.id && !req.instructor.isAdmin) return res.status(403).json({ error: 'Only the instructor who made this graph can change it.' });
+      const { graph, error } = GR.cleanGraph(req.body);
+      if (error) return res.status(400).json({ error });
+      try { checkBuild(graph); } catch (err) { return res.status(400).json({ error: 'This graph can’t be built: ' + err.message }); }
+      // Attempts keep their seeds; if the tasks change, attempts in progress are ended so nobody is
+      // caught between two versions (their scores are kept).
+      if (JSON.stringify(cur.config.tasks) !== JSON.stringify(graph.config.tasks) || JSON.stringify(cur.config.demand) !== JSON.stringify(graph.config.demand) || JSON.stringify(cur.config.supply) !== JSON.stringify(graph.config.supply)) {
+        await pool.query(`UPDATE practice_attempts SET status='ended', finished_at=now() WHERE exercise_id=$1 AND status='active'`, ['g' + cur.id]);
+      }
+      const r = await pool.query(`UPDATE practice_graphs SET chapter_number=$2, chapter_title=$3, title=$4, summary=$5, config=$6, updated_at=now() WHERE id=$1 RETURNING *`,
+        [cur.id, graph.chapterNumber, graph.chapterTitle, graph.title, graph.summary, JSON.stringify(graph.config)]);
+      await loadGraphs();
+      res.json({ graph: graphOut(r.rows[0], req.instructor) });
+    } catch (e) { fail(res, 'graph update')(e); }
+  });
+  // Removing a graph hides it from students; past attempts and scores stay in the database.
+  app.delete('/api/practice/graphs/:id', requireInstructor, async (req, res) => {
+    try {
+      const cur = (await pool.query(`SELECT * FROM practice_graphs WHERE id=$1 AND NOT archived`, [Number(req.params.id) || 0])).rows[0];
+      if (!cur) return res.status(404).json({ error: 'Graph not found.' });
+      if (cur.owner_id !== req.instructor.id && !req.instructor.isAdmin) return res.status(403).json({ error: 'Only the instructor who made this graph can remove it.' });
+      await pool.query(`UPDATE practice_graphs SET archived=true, updated_at=now() WHERE id=$1`, [cur.id]);
+      await pool.query(`DELETE FROM practice_open WHERE exercise_id=$1`, ['g' + cur.id]);
+      await pool.query(`UPDATE practice_attempts SET status='ended', finished_at=now() WHERE exercise_id=$1 AND status='active'`, ['g' + cur.id]);
+      await loadGraphs();
+      res.json({ ok: true });
+    } catch (e) { fail(res, 'graph delete')(e); }
+  });
+
+  return { init, _test: { copiedShare, visibleText, parseNum, checkNumber, checkChoice, checkTable, instance, scoreOf, stepCredit, explainSystem, askSystem, parseVerdict, tableKey, fmtAnswer, COURSES, EX, LABS, rng, checkGraph } };
 };
