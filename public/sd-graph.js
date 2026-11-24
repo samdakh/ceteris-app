@@ -362,6 +362,7 @@
       render(); changed();
     }
 
+    if ((state.mode === 'ceiling' || state.mode === 'floor') && state.price == null) state.price = defaultPrice(state.mode);
     render();
     return {
       getState, solved,

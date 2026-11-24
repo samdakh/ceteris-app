@@ -83,7 +83,7 @@ function instance(exId, seed) {
     if (s.kind === 'number' && s.mistakes) {
       const seen = [];
       s.mistakes = s.mistakes.filter(m => {
-        if (!Number.isFinite(m.value) || near(m.value, s.answer.value, stepTol(s)) || seen.some(v => near(v, m.value, 0.01))) return false;
+        if (!Number.isFinite(m.value) || near(m.value, s.answer.value, stepTol(s)) || (s.answer.alt || []).some(x => near(m.value, x, 0.01)) || seen.some(v => near(v, m.value, 0.01))) return false;
         seen.push(m.value);
         return true;
       });
@@ -171,7 +171,7 @@ function tableKey(step) {
 function parseNum(raw) {
   let t = String(raw == null ? '' : raw).trim().toLowerCase()
     .replace(/[−–—]/g, '-').replace(/[$,\s]/g, '')
-    .replace(/(dollars?|cases?|haircuts?|salons?|units?|lawns?|firms?)$/, '');
+    .replace(/%$/, '').replace(/(dollars?|cases?|haircuts?|salons?|units?|lawns?|firms?|percent|students?|apartments?|trucks?|phones?|iphones?)$/, '');
   let neg = false;
   if (/^\(.*\)$/.test(t)) { neg = true; t = t.slice(1, -1); }
   if (!/^[-+]?(\d+\.?\d*|\.\d+)$/.test(t)) return NaN;
@@ -185,7 +185,7 @@ function checkNumber(step, raw, attempts) {
   const v = parseNum(raw);
   if (!Number.isFinite(v)) return { invalid: true, message: 'Enter a number, like 45 or -20.' };
   const a = step.answer, tol = stepTol(step);
-  if (near(v, a.value, tol)) return { correct: true };
+  if (near(v, a.value, tol) || (a.alt || []).some(x => near(v, x, a.altTol != null ? a.altTol : tol))) return { correct: true };
   const m = (step.mistakes || []).find(x => near(v, x.value, x.tol != null ? x.tol : 0.01));
   if (m) return { correct: false, message: m.msg, known: true };
   if (a.value !== 0 && near(-v, a.value, tol)) return { correct: false, message: 'So close! Check the sign: is this a profit or a loss?' };

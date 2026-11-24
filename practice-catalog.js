@@ -623,7 +623,8 @@ const COURSES = [
       },
       require('./practice-ch16')
     ]
-  }
+  },
+  require('./practice-econ3240')
 ];
 
 module.exports = { COURSES };

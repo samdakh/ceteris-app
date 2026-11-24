@@ -11,6 +11,7 @@ Runs as a small Node.js server so students only need the link — no Claude acco
 - `public/admin-ui.js` and `public/admin.css` — instructor accounts, sections and their students.
 - `practice-catalog.js` — the practice catalog (courses and chapters) and the Chapter 15 exercises: each one a generator that draws fresh numbers for every attempt.
 - `practice-ch16.js` — the Chapter 16 (monopoly) exercises.
+- `practice-econ3240.js` — the Intermediate Microeconomics (ECON 3240) course.
 - `practice-helpers.js` — small helpers the chapter files share.
 - `practice.js` — practice on the server: attempts, scoring, answer checking, hints, explanation reviews, progress.
 - `public/practice-ui.js` and `public/practice.css` — the practice screens for students and the instructor's Practice tab.
@@ -140,6 +141,11 @@ While an in-class essay is open and a student hasn't submitted, the regular tuto
 Step-by-step exercises, organized by course and chapter. **Principles of Microeconomics** has two chapters so far:
 - **Chapter 15, Firms in competitive markets** (from the Chapter 15 worksheet): Bob's lawn-mowing service, a firm in long-run equilibrium, Ball Bearings, haircuts in Chattanooga, and an industry on its way to the long run.
 - **Chapter 16, Monopoly** (from the FA25 monopoly questions): monopoly power and efficiency (multiple choice, variants drawn and options shuffled), Fly-Rite's pogo sticks (MR = MC, deadweight loss, the patent expires), Fly-Rite and free trade, Drive-By Truckers' album (MR from a schedule, the recording fee), Chattanooga FC tickets and a play in town (price discrimination, and what a ban does).
+- **Intermediate Microeconomics (ECON 3240)**, a second course built from the FA25 final:
+  - *Ch. 1, Competitive markets and price controls*: rent control for student housing (equilibrium, a binding ceiling shown on the graph, the shortage, a homelessness rate).
+  - *Ch. 2, Market power*: a monopolist with constant costs (MR = MC, profit, consumer surplus, deadweight loss), regulating a natural gas utility (marginal-cost pricing, the break-even equation and price), iPhones in Canada and the U.S. (price discrimination and arbitrage).
+  - *Ch. 3, Asymmetric information*: used trucks when sellers know more (lemons), used trucks when buyers know more (what an offer reveals), paying a realtor (participation and incentive constraints, fee plus bonus, commissions).
+  Answers in thousands are accepted where the problem works in thousands (8 or 8,000), and percentages with or without a % sign.
 
 Each chapter carries its own vocabulary (in its catalog entry), which the coach and the explanation reviewer use.
 
