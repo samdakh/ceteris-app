@@ -194,6 +194,9 @@ Each student decides what you see, with a switch in their chat's side panel: **S
 
 The switch controls what the app shows you. Full conversations are still stored in your Supabase database (Ceteris needs them to carry on a conversation), so anyone with access to that database could read them. Keep the Supabase login to yourself.
 
+## About
+A small ⓘ button in every top bar (and an **About Ceteris** link on the welcome page) opens a panel describing the app, how student work is stored and shared, who made it, and how to get in touch, with a copyright line and the version. The owner's name and contact address are set in one place, `OWNER` near the top of the script in `public/index.html`. The address is put together only when the panel opens, so it doesn't appear in the page as plain text for address harvesters.
+
 ## Settings
 - `CLASS_TIMEZONE` (optional, default `America/New_York`): decides when "today" starts and ends, which is when a student's conversation rolls over to a new one. Any IANA zone name works, e.g. `America/Chicago`.
 - `INSTRUCTOR_NAME` (optional): the admin account's display name the first time Ceteris starts, e.g. `Prof. Dakhlia`. After that, each instructor sets their own name under **Account**.

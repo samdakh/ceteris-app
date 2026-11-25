@@ -389,6 +389,24 @@
   .landing-hero { position: relative; }
   .landing-theme { position: absolute; top: 18px; right: 20px; }
   .topbar-tools { display: flex; align-items: center; gap: 16px; }
+
+  /* About */
+  .about-btn { display: inline-flex; align-items: center; justify-content: center; width: 26px; height: 26px; padding: 0; border: none; border-radius: 50%; background: none; color: var(--gray-25); cursor: pointer; opacity: .8; }
+  .about-btn:hover, .about-btn:focus-visible { opacity: 1; color: var(--gold); }
+  .about-btn:focus-visible { outline: 2px solid var(--gold); outline-offset: 2px; }
+  .landing-foot { text-align: center; padding: 0 20px 22px; margin-top: auto; }
+  .landing-foot .link-btn { color: var(--gray-25); text-decoration-color: var(--gold); opacity: .85; }
+  .about-dialog { max-width: 520px; width: calc(100% - 32px); border: 1px solid var(--line); border-radius: 14px; padding: 0; background: var(--card); color: var(--ink); box-shadow: 0 20px 60px rgba(0,0,0,.3); }
+  .about-dialog::backdrop { background: rgba(10, 25, 45, .55); }
+  .about-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 18px 22px 0; }
+  .about-head h2 { font-family: var(--font-display); font-size: 22px; margin: 0; }
+  .about-close { background: none; border: none; font-size: 22px; line-height: 1; color: var(--ink-soft); cursor: pointer; padding: 4px 6px; border-radius: 6px; }
+  .about-close:hover, .about-close:focus-visible { color: var(--ink); background: var(--surface-2); }
+  .about-body { padding: 6px 22px 20px; font-size: 14.5px; line-height: 1.55; }
+  .about-body p { margin: 10px 0; }
+  .about-body h3 { font-size: 13px; font-family: var(--font-mono); text-transform: uppercase; letter-spacing: .06em; color: var(--ink-soft); margin: 18px 0 4px; font-weight: 600; }
+  .about-body a { color: var(--ink); text-decoration-color: var(--gold); text-underline-offset: 3px; }
+  .about-meta { border-top: 1px solid var(--line); margin-top: 18px; padding-top: 12px; font-family: var(--font-mono); font-size: 11.5px; color: var(--ink-soft); display: flex; justify-content: space-between; flex-wrap: wrap; gap: 6px; }
 </style>
 <link rel="stylesheet" href="/essays.css">
 <link rel="stylesheet" href="/admin.css">
@@ -439,6 +457,51 @@
       <circle cx="103.1" cy="64.4" r="5" fill="#FDB736" stroke="#112E51" stroke-width="2"/>
       <text x="100" y="52" font-family="IBM Plex Mono" font-size="10" fill="#FFFFFF">E</text>
     </svg>`;
+
+  // ---------- About ----------
+  // The owner's details live here. The address is put together when the panel opens, so it
+  // never sits in the page as plain text for address harvesters.
+  const OWNER = { name: 'Sami Dakhlia', mail: ['sami.dakhlia', 'gmail.com'], since: 2026 };
+  const ICON_INFO = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="9.5"/><path d="M12 11v6"/><circle cx="12" cy="7.6" r=".6" fill="currentColor"/></svg>';
+  function openAbout(opener) {
+    let dlg = document.getElementById('about-dialog');
+    if (dlg) dlg.remove();
+    const email = OWNER.mail.join('@');
+    const year = new Date().getFullYear();
+    dlg = document.createElement('dialog');
+    dlg.id = 'about-dialog'; dlg.className = 'about-dialog'; dlg.setAttribute('aria-labelledby', 'about-title');
+    dlg.innerHTML = `
+      <div class="about-head"><h2 id="about-title">About Ceteris</h2><button type="button" class="about-close" aria-label="Close">×</button></div>
+      <div class="about-body">
+        <p>Ceteris is an economics tutor for students. Ask it about a concept, a graph or a problem you’re stuck on; work through step-by-step practice exercises with a coach; and draft essays with feedback along the way.</p>
+        <p>Ceteris runs on Claude, an AI model made by Anthropic. Like any AI, it can make mistakes: check anything important with your instructor or your textbook.</p>
+        <h3>Your work and your privacy</h3>
+        <p>Ceteris stores your conversations and your work so it can pick up where you left off, and so your instructor can follow your progress. Your instructor sees your practice scores and essay work, and summaries of your conversations. They see your conversations in your own words only if you switch on sharing in the chat’s side panel.</p>
+        <h3>Contact</h3>
+        <p>Ceteris was created and is maintained by ${escapeHtml(OWNER.name)}. Questions, feedback, or a problem to report? Email <a href="mailto:${email}?subject=${encodeURIComponent('Ceteris')}">${escapeHtml(email)}</a>.</p>
+        <div class="about-meta"><span>© ${OWNER.since}${year > OWNER.since ? '–' + year : ''} ${escapeHtml(OWNER.name)}. All rights reserved.</span>${pageBuild ? `<span>Version ${escapeHtml(String(pageBuild).slice(0, 12))}</span>` : ''}</div>
+      </div>`;
+    document.body.appendChild(dlg);
+    const close = () => dlg.close();
+    dlg.querySelector('.about-close').onclick = close;
+    dlg.addEventListener('click', e => { if (e.target === dlg) close(); });   // click outside the panel
+    dlg.addEventListener('close', () => { dlg.remove(); if (opener && opener.isConnected) opener.focus(); });
+    dlg.showModal();
+  }
+  document.addEventListener('click', e => { const b = e.target.closest('[data-about]'); if (b) openAbout(b); });
+  // Every top bar gets a small About button, whichever screen drew it.
+  function addAboutButtons() {
+    document.querySelectorAll('header.topbar').forEach(h => {
+      if (h.querySelector('[data-about]')) return;
+      const box = h.querySelector('.topbar-right, .topbar-tools');
+      if (!box) return;
+      const b = document.createElement('button');
+      b.type = 'button'; b.className = 'about-btn'; b.setAttribute('data-about', ''); b.setAttribute('aria-label', 'About Ceteris'); b.title = 'About Ceteris';
+      b.innerHTML = ICON_INFO;
+      box.insertBefore(b, box.firstChild);
+    });
+  }
+  new MutationObserver(addAboutButtons).observe(document.getElementById('app'), { childList: true, subtree: true });
 
   // If the server starts reporting a different build, this tab is running an old version of the page.
   let pageBuild = null;
@@ -525,6 +588,7 @@
             <button class="role-btn on-blue" id="btn-instructor">I'm the instructor</button>
           </div>
         </main>
+        <footer class="landing-foot"><button type="button" class="link-btn" data-about>About Ceteris</button></footer>
       </div>`;
     document.getElementById('btn-student').onclick = () => go('student-login');
     document.getElementById('btn-instructor').onclick = () => go(store.get(INSTRUCTOR_KEY) ? 'instructor' : 'instructor-login');
